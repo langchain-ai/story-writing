@@ -1,6 +1,8 @@
 {
   "python_version": "3.11",
   "dependencies": [
+    "langchain_anthropic",
+    "langgraph",
     "."
   ],
   "graphs": {
