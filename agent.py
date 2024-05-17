@@ -17,6 +17,8 @@ def update_chapters(left, right):
         right = [right]
     if len(right) != 1:
         raise ValueError
+    if len(left) == 0:
+        return right
     chapter = right[0]
     merged = left.copy()
     if left[-1]['number'] == chapter['number']:
