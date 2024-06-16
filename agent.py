@@ -29,26 +29,6 @@ class Chapter(TypedDict):
     number: int
     content: str
     title: str
-
-'''
-def update_chapters(left, right):
-    # coerce to list
-    if not isinstance(left, list):
-        left = [left]
-    if not isinstance(right, list):
-        right = [right]
-    if len(right) != 1:
-        raise ValueError
-    if len(left) == 0:
-        return right
-    chapter = right[0]
-    merged = left.copy()
-    if left[-1]['number'] == chapter['number']:
-        merged[-1] = chapter
-    else:
-        merged.append(chapter)
-    return merged
-'''
     
 def update_all_chapters(previous_chapters, new_chapter):
     new_chapter = new_chapter[list(new_chapter.keys())[0]][0]
@@ -179,7 +159,6 @@ def summarize_current_story(state):
     return summary_chain.invoke({"chapters_str": chapters_str})
 
 def edit_chapter(state):
-    print(f"CURRENT_CHAPTER: {state['currently_selected_chapter']}")
     chapters_summary = summarize_current_story(state)
     user_message = edit_prompt.format(
         chapters_summary=chapters_summary, 
@@ -204,7 +183,6 @@ def continue_chapter(state):
     prompt = instructions.format(summary=state['summary'], details=state['details'], style=state['style'])
     response = llm.invoke([{"role": "system", "content": prompt}, {"role": "user", "content": user_message}])
     chapter, chapter_title = parse(response.content)
-    print(int(state['currently_selected_chapter']) + 1)
     len_of_chapters_num_n = len(state['all_chapters'][str(int(state['currently_selected_chapter'])+1)]) if str(int(state['currently_selected_chapter'])+1) in state['all_chapters'] else 0
     return {"all_chapters": {str(int(state['currently_selected_chapter']) + 1):[{"number": int(state['currently_selected_chapter']) + 1, "content": chapter, "title": chapter_title}]}, \
             "current_chapter_indices":{str(int(state['currently_selected_chapter']) + 1):len_of_chapters_num_n} , "currently_selected_chapter": str(int(state['currently_selected_chapter'])+1), \
