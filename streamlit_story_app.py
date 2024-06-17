@@ -14,7 +14,7 @@ async def get_new_thread(client):
     thread = await client.threads.create()
     return thread
 
-async def run_graph_with_input(client,thread,assistant,input,metadata):
+async def run_graph_with_input(client,thread,assistant,input,metadata={}):
     # Need to add streaming capability
     data = []
     async for chunk in client.runs.stream(
@@ -67,30 +67,21 @@ def transform_titles_into_options(titles):
     return transformed_titles[::-1]
 
 async def update_session_variables():
-    st.session_state.current_node_id += 1
     current_state = await call_async_function_safely(get_current_state,st.session_state.client,st.session_state.thread)
-    st.session_state.all_chapters = current_state['values']['all_chapters']
-    st.session_state.current_chapter_indices = current_state['values']['current_chapter_indices']
-    st.session_state.currently_selected_chapter = current_state['values']['currently_selected_chapter']
-
-    st.session_state.current_chapter_options = st.session_state.all_chapters[str(int(st.session_state.currently_selected_chapter))]
-    st.session_state.previous_chapter_options = st.session_state.all_chapters[str(int(st.session_state.currently_selected_chapter)-1)] if \
-        str(int(st.session_state.currently_selected_chapter)-1) in st.session_state.all_chapters else []
-    st.session_state.next_chapter_options = st.session_state.all_chapters[str(int(st.session_state.currently_selected_chapter)+1)] if  \
-        str(int(st.session_state.currently_selected_chapter)+1) in st.session_state.all_chapters else []
-    
-    st.session_state.current_chapter_index = st.session_state.current_chapter_indices[st.session_state.currently_selected_chapter]
+    st.session_state.chapter_graph = current_state['values']['chapter_graph']
+    st.session_state.currently_selected_chapter = str(current_state['values']['chapter_id_viewing'])
+    print(st.session_state.chapter_graph)
+    st.session_state.next_chapter_options = st.session_state.chapter_graph[st.session_state.currently_selected_chapter]['children']
+    st.session_state.current_chapter_options = st.session_state.chapter_graph[st.session_state.currently_selected_chapter]['siblings'] \
+                                                + st.session_state.chapter_graph[st.session_state.currently_selected_chapter]['cousins'] + [st.session_state.currently_selected_chapter]
+    st.session_state.previous_chapter_options = [x for x in [st.session_state.chapter_graph[st.session_state.currently_selected_chapter]['parent']] if x!= '-1']
         
 async def reset_session_variables():
-    st.session_state.current_node_id = 1
-    st.session_state.all_chapters = {'-1':[{'number':-1,'content':"Click Start Story to begin writing!", 'title':"Pre-start Chapter"}]}
+    st.session_state.chapter_graph = {"-1":{'content':"Click Start Story to begin writing!", 'title':"Pre-start Chapter"}}
     st.session_state.client,st.session_state.thread,st.session_state.assistant = await call_async_function_safely(start_agent)
-    st.session_state.current_chapter_indices = {'-1':0}
-    st.session_state.currently_selected_chapter = '-1'
+    st.session_state.currently_selected_chapter = "-1"
 
-    st.session_state.current_chapter_index = 0
-
-    st.session_state.current_chapter_options = st.session_state.all_chapters[st.session_state.currently_selected_chapter]
+    st.session_state.current_chapter_options = ["-1"]
     st.session_state.previous_chapter_options, st.session_state.next_chapter_options = [],[]
 
 async def main():
@@ -142,7 +133,7 @@ async def main():
 
                 await call_async_function_safely(run_graph_with_input,st.session_state.client,st.session_state.thread,
                                                 st.session_state.assistant,{'summary':summary_text,'details':detail_text,
-                                                'style':style_text},{'node_id':st.session_state.current_node_id})
+                                                'style':style_text})
                 
                 st.session_state.story_started = True
                 await update_session_variables()
@@ -160,8 +151,7 @@ async def main():
 
                 await call_async_function_safely(run_graph_with_input,st.session_state.client,st.session_state.thread,
                                                 st.session_state.assistant,{'rewrite_instructions':edit_chapter_text},
-                                                {'node_id':st.session_state.current_node_id})
-                
+                                                )
 
                 await update_session_variables()
                 st.session_state.show_edit_input = False
@@ -178,7 +168,7 @@ async def main():
                 
                 await call_async_function_safely(run_graph_with_input,st.session_state.client,st.session_state.thread,
                                                 st.session_state.assistant,{'continue_instructions':next_chapter_text}
-                                                ,{'node_id':st.session_state.current_node_id})
+                                                )
                 await update_session_variables()
                 st.session_state.show_continue_input = False
                 st.rerun()
@@ -199,7 +189,7 @@ async def main():
     col1, _, col3 = st.columns([1, 2, 1]) 
 
     with col1:
-        options = transform_titles_into_options([c['title'].strip() for c in st.session_state.previous_chapter_options])
+        options = transform_titles_into_options([st.session_state.chapter_graph[chapter_id]['title'] for chapter_id in st.session_state.previous_chapter_options])
         if len(options) > 0:
             st.session_state.selected_previous_chapter = st.selectbox("",options,index=None,placeholder="Select previous chapter", \
                                                                  label_visibility="collapsed",key=f"previous_chapter_{st.session_state.num_selected}")
@@ -210,13 +200,13 @@ async def main():
 
         if st.session_state.selected_previous_chapter is not None:
             st.session_state.num_selected += 1
-            st.session_state.current_chapter_indices[str(int(st.session_state.currently_selected_chapter)-1)] = options.index(st.session_state.selected_previous_chapter)
-            await call_async_function_safely(update_current_state,st.session_state.client,st.session_state.thread,{'current_chapter_indices':st.session_state.current_chapter_indices, \
-                                                        'currently_selected_chapter':str(int(st.session_state.currently_selected_chapter)-1)})
+            new_chapter_selected = st.session_state.previous_chapter_options[options.index(st.session_state.selected_previous_chapter)]
+            
+            await call_async_function_safely(update_current_state,st.session_state.client,st.session_state.thread,{'chapter_id_viewing':new_chapter_selected})
             await call_async_function_safely(update_session_variables)
             st.rerun()
     with col3:
-        options = transform_titles_into_options([c['title'].strip() for c in st.session_state.next_chapter_options])
+        options = transform_titles_into_options([st.session_state.chapter_graph[chapter_id]['title'] for chapter_id in st.session_state.next_chapter_options])
         if len(options) > 0:
             st.session_state.selected_next_chapter = st.selectbox("",options,index=None,placeholder="Select next chapter", \
                                                                  label_visibility="collapsed",key=f"next_chapter_{st.session_state.num_selected}")
@@ -227,28 +217,33 @@ async def main():
 
         if st.session_state.selected_next_chapter is not None:
                 st.session_state.num_selected += 1
-                st.session_state.current_chapter_indices[str(int(st.session_state.currently_selected_chapter)+1)] = options.index(st.session_state.selected_next_chapter)
-                await call_async_function_safely(update_current_state,st.session_state.client,st.session_state.thread,{'current_chapter_indices':st.session_state.current_chapter_indices, \
-                                                        'currently_selected_chapter':str(int(st.session_state.currently_selected_chapter)+1)})
+                new_chapter_selected = st.session_state.next_chapter_options[options.index(st.session_state.selected_next_chapter)]
+
+                await call_async_function_safely(update_current_state,st.session_state.client,st.session_state.thread,{'chapter_id_viewing':new_chapter_selected})
                 await call_async_function_safely(update_session_variables)
                 st.rerun()
 
     st.markdown(f"<h2 style='text-align: center; color: white;'>  \
-                {st.session_state.current_chapter_options[st.session_state.current_chapter_index]['title']} \
+                {st.session_state.chapter_graph[st.session_state.currently_selected_chapter]['title']} \
                   </h2>",unsafe_allow_html=True)
-    st.text_area(" ", value=st.session_state.current_chapter_options[st.session_state.current_chapter_index]['content'], height=450)
+    st.text_area(" ", value=st.session_state.chapter_graph[st.session_state.currently_selected_chapter]['content'], height=450)
 
     _, col2, _ = st.columns([1, 2, 1])
     with col2:
-        options = transform_titles_into_options([c['title'].strip() for c in st.session_state.current_chapter_options])
-        st.session_state.selected_current_chapter = st.selectbox("",options,index=None,placeholder="Select current chapter", \
+        options = transform_titles_into_options([st.session_state.chapter_graph[chapter_id]['title'] for chapter_id in st.session_state.current_chapter_options])
+        if len(options) > 0:
+            st.session_state.selected_current_chapter = st.selectbox("",options,index=None,placeholder="Select current chapter", \
                                                                  label_visibility="collapsed",key=f"current_chapter_{st.session_state.num_selected}")
+        else:
+            st.session_state.selected_current_chapter = None
+            st.write("No alternate current chapters!")
 
         if st.session_state.selected_current_chapter is not None:
             st.session_state.num_selected += 1
-            st.session_state.current_chapter_index = options.index(st.session_state.selected_current_chapter)
-            st.session_state.current_chapter_indices[st.session_state.currently_selected_chapter] = st.session_state.current_chapter_index
-            await call_async_function_safely(update_current_state,st.session_state.client,st.session_state.thread,{'current_chapter_indices':st.session_state.current_chapter_indices})
+            new_chapter_selected = st.session_state.current_chapter_options[options.index(st.session_state.selected_current_chapter)]
+            
+            await call_async_function_safely(update_current_state,st.session_state.client,st.session_state.thread,{'chapter_id_viewing':new_chapter_selected})
+            
             await call_async_function_safely(update_session_variables)
             st.rerun()
 

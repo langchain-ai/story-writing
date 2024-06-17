@@ -4,6 +4,7 @@ from langgraph.graph import StateGraph, END
 from typing import TypedDict, Annotated, List, Dict
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
+from copy import deepcopy
 
 '''
 llm = ChatAnthropic(model="claude-3-haiku-20240307", max_tokens_to_sample=4000)
@@ -26,33 +27,26 @@ prompt = ChatPromptTemplate.from_messages(messages)
 summary_chain = prompt | summary_llm | StrOutputParser()
 
 class Chapter(TypedDict):
-    number: int
     content: str
     title: str
+    children: list
+    siblings: list
+    cousins: list
+    parent: int
     
-def update_all_chapters(previous_chapters, new_chapter):
-    new_chapter = new_chapter[list(new_chapter.keys())[0]][0]
-    chapter_num = new_chapter['number']
-    new_chapters = previous_chapters.copy()
-    if chapter_num in previous_chapters:
-        new_chapters[str(chapter_num)].append(new_chapter)
-    else:
-        new_chapters[str(chapter_num)] = [new_chapter]
-    return new_chapters
-
-def update_chapters_selected(prev_selected_chapters,new_selected_chapter):
-    new_selected_chapters = prev_selected_chapters.copy()
-    new_selected_chapters.update(new_selected_chapter)
-    return new_selected_chapters
+def update_chapter_graph(old_chapter_graph, new_chapter_graph):
+    if isinstance(new_chapter_graph,dict):
+        old_chapter_graph.update(new_chapter_graph)
+        return old_chapter_graph
 
 class State(TypedDict):
     # User's initial inputs (could be updated later)
     summary: str
     details: str
     style: str
-    all_chapters: Annotated[Dict[str,List[Chapter]], update_all_chapters]
-    current_chapter_indices: Annotated[Dict[str,int], update_chapters_selected]
-    currently_selected_chapter: str
+    chapter_graph: Annotated[dict[str, Chapter], update_chapter_graph]
+    chapter_id_viewing: str
+    current_chapter_id: str
     rewrite_instructions: str
     continue_instructions: str
 
@@ -145,51 +139,78 @@ def parse(txt: str):
 def write_first_chapter(state):
     prompt = instructions.format(summary=state['summary'], details=state['details'], style=state['style'])
     response = llm.invoke(prompt)
-    chapter, chapter_title = parse(response.content)
-    return {"all_chapters": {"0":[{"number": 0, "content": chapter, "title": chapter_title}]}, "current_chapter_indices":{0:0} , \
-            "currently_selected_chapter": "0", "rewrite_instructions": "", "continue_instructions": ""}
+    chapter_content, chapter_title = parse(response.content)
 
-def summarize_current_story(state):
-    chapters_currently_selected_text = []
-    for i in range (int(state['currently_selected_chapter'])+1):
-        chapters_currently_selected_text.append(state['all_chapters'][str(state['current_chapter_indices'][str(i)])])
+    state['current_chapter_id'] = '1'
+    state['chapter_id_viewing'] = '1'
+    state['chapter_graph'] = {'1':Chapter(content=chapter_content,title=chapter_title,children=[],siblings=[],cousins=[],parent='-1')}
+    return state
+
+def summarize_current_story(state,chapter_id):
+    if chapter_id == '-1':
+        return ""
+    current_chapter_id = chapter_id
+    chapters_currently_selected_text = [state['chapter_graph'][current_chapter_id]['content']]
+    while state['chapter_graph'][current_chapter_id]['parent'] != '-1':
+        chapters_currently_selected_text.append(state['chapter_graph'][current_chapter_id]['content'])
+        current_chapter_id = state['chapter_graph'][current_chapter_id]['parent']
     chapters_str = "\n\n".join(
         [f"Chapter {i}\n\n{chapters_currently_selected_text[i]}" for i in range(len(chapters_currently_selected_text))]
     ).strip()
     return summary_chain.invoke({"chapters_str": chapters_str})
 
 def edit_chapter(state):
-    chapters_summary = summarize_current_story(state)
+    chapters_summary = summarize_current_story(state,state['chapter_graph'][state["chapter_id_viewing"]]['parent'])
     user_message = edit_prompt.format(
         chapters_summary=chapters_summary, 
-        draft=state['all_chapters'][state['currently_selected_chapter']][state['current_chapter_indices'][state['currently_selected_chapter']]], 
+        draft=state['chapter_graph'][state['chapter_id_viewing']]['content'], 
         edit=state['rewrite_instructions']
     )
     prompt = instructions.format(summary=state['summary'], details=state['details'], style=state['style'])
     response = llm.invoke([{"role": "system", "content": prompt}, {"role": "user", "content": user_message}])
-    chapter, chapter_title = parse(response.content)
-    len_of_chapters_num_n = len(state['all_chapters'][state['currently_selected_chapter']])
-    return {"all_chapters": {state['currently_selected_chapter']:[{"number": state['currently_selected_chapter'], "content": chapter, "title": chapter_title}]}, 
-            "current_chapter_indices":{state['currently_selected_chapter']:len_of_chapters_num_n} , "currently_selected_chapter": state['currently_selected_chapter'],\
-                "rewrite_instructions": "", "continue_instructions": ""}
+    chapter_content, chapter_title = parse(response.content)
+    
+    #create new chapter
+    state['chapter_graph'][str(int(state["current_chapter_id"])+1)] = Chapter(content=chapter_content,title=chapter_title,children=[], \
+                                                   siblings=deepcopy(state["chapter_graph"][state["chapter_id_viewing"]]['siblings']+[state["chapter_id_viewing"]]), \
+                                                   cousins=deepcopy(state["chapter_graph"][state["chapter_id_viewing"]]['children']), \
+                                                   parent=deepcopy(state["chapter_graph"][state["chapter_id_viewing"]]['parent']))
+    #update siblings
+    for sibling in state["chapter_graph"][state["chapter_id_viewing"]]['siblings']:
+        state["chapter_graph"][sibling]['siblings'].append(str(int(state["current_chapter_id"])+1))
+
+    state["chapter_graph"][state["chapter_id_viewing"]]['siblings'].append(str(int(state["current_chapter_id"])+1))
+    state["current_chapter_id"] = str(int(state["current_chapter_id"])+1)
+    state["chapter_id_viewing"] = deepcopy(state["current_chapter_id"])
+    return state
 
 
 def continue_chapter(state):
-    chapters_summary = summarize_current_story(state)
+    chapters_summary = summarize_current_story(state,state["chapter_id_viewing"])
     user_message = continue_prompt.format(
         chapters_summary=chapters_summary, 
         instructions=state['continue_instructions']
     )
     prompt = instructions.format(summary=state['summary'], details=state['details'], style=state['style'])
     response = llm.invoke([{"role": "system", "content": prompt}, {"role": "user", "content": user_message}])
-    chapter, chapter_title = parse(response.content)
-    len_of_chapters_num_n = len(state['all_chapters'][str(int(state['currently_selected_chapter'])+1)]) if str(int(state['currently_selected_chapter'])+1) in state['all_chapters'] else 0
-    return {"all_chapters": {str(int(state['currently_selected_chapter']) + 1):[{"number": int(state['currently_selected_chapter']) + 1, "content": chapter, "title": chapter_title}]}, \
-            "current_chapter_indices":{str(int(state['currently_selected_chapter']) + 1):len_of_chapters_num_n} , "currently_selected_chapter": str(int(state['currently_selected_chapter'])+1), \
-                "rewrite_instructions": "", "continue_instructions": ""}
+    chapter_content, chapter_title = parse(response.content)
+
+    #create new chapter
+    state['chapter_graph'][str(int(state["current_chapter_id"])+1)] = Chapter(content=chapter_content,title=chapter_title,children=[],siblings=[], \
+                                                   cousins=deepcopy(state["chapter_graph"][state["chapter_id_viewing"]]['children']),\
+                                                    parent=deepcopy(state['chapter_id_viewing']))
+    #update cousins
+    for child in state["chapter_graph"][state["chapter_id_viewing"]]['children']:
+        state["chapter_graph"][child]['cousins'].append(str(int(state["current_chapter_id"])+1))
+    #update children
+    state["chapter_graph"][state["chapter_id_viewing"]]['children'].append(str(int(state["current_chapter_id"])+1))
+    state["current_chapter_id"] = str(int(state["current_chapter_id"])+1)
+    state["chapter_id_viewing"] = deepcopy(state["current_chapter_id"])
+    return state
+
 
 def router(state):
-    if len(state.get('all_chapters', [])) == 0:
+    if len(state.get('chapter_graph', [])) == 0:
         return "first"
     elif state.get('rewrite_instructions', ''):
         return "rewrite"
