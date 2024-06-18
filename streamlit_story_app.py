@@ -1,14 +1,29 @@
 import streamlit as st
 from langgraph_sdk import get_client
+from streamlit_navigation_bar import st_navbar
 import asyncio
+from langsmith import Client
+from streamlit_extras.stylable_container import stylable_container
+feedback_client = Client()
 
 async def start_agent():
     client = get_client()
+        #url="https://ht-unhealthy-buffalo25-39d00f953458585aa9f7b5a4fa-g3ps4aazkq-uc.a.run.app")
     assistants = await client.assistants.search()
     assistants = [a for a in assistants if not a['config']]
     thread = await client.threads.create()
     assistant = assistants[0]
     return [client,thread,assistant]
+
+
+async def get_run_id_corresponding_to_node(client, thread, node_id):
+    '''Get the run id corresponding to the chapter written'''
+    runs = await client.runs.list(thread_id=thread['thread_id'])
+
+    for r in runs:
+        if r['kwargs']['config']['configurable']['node_id'] == node_id:
+            return r['run_id']
+    return None
 
 async def get_new_thread(client):
     thread = await client.threads.create()
@@ -70,7 +85,7 @@ async def update_session_variables():
     current_state = await call_async_function_safely(get_current_state,st.session_state.client,st.session_state.thread)
     st.session_state.chapter_graph = current_state['values']['chapter_graph']
     st.session_state.currently_selected_chapter = str(current_state['values']['chapter_id_viewing'])
-    print(st.session_state.chapter_graph)
+    st.session_state.current_node_id = str(int(current_state['values']['current_chapter_id']) + 1)
     st.session_state.next_chapter_options = st.session_state.chapter_graph[st.session_state.currently_selected_chapter]['children']
     st.session_state.current_chapter_options = st.session_state.chapter_graph[st.session_state.currently_selected_chapter]['siblings'] \
                                                 + st.session_state.chapter_graph[st.session_state.currently_selected_chapter]['cousins'] + [st.session_state.currently_selected_chapter]
@@ -80,16 +95,13 @@ async def reset_session_variables():
     st.session_state.chapter_graph = {"-1":{'content':"Click Start Story to begin writing!", 'title':"Pre-start Chapter"}}
     st.session_state.client,st.session_state.thread,st.session_state.assistant = await call_async_function_safely(start_agent)
     st.session_state.currently_selected_chapter = "-1"
+    st.session_state.current_node_id = '1'
 
     st.session_state.current_chapter_options = ["-1"]
     st.session_state.previous_chapter_options, st.session_state.next_chapter_options = [],[]
 
 async def main():
     st.title("Story Writing with Langgraph")
-
-    if "forward_in_time_list_mode" not in st.session_state:
-        st.session_state.forward_in_time_list_mode = False
-        st.session_state.forward_branches = []
 
     if "page_loaded" not in st.session_state:
         st.session_state.page_loaded = False
@@ -133,7 +145,7 @@ async def main():
 
                 await call_async_function_safely(run_graph_with_input,st.session_state.client,st.session_state.thread,
                                                 st.session_state.assistant,{'summary':summary_text,'details':detail_text,
-                                                'style':style_text})
+                                                'style':style_text},{"node_id":st.session_state.current_node_id})
                 
                 st.session_state.story_started = True
                 await update_session_variables()
@@ -150,8 +162,8 @@ async def main():
             if st.button("Submit",key="edit-submit"):
 
                 await call_async_function_safely(run_graph_with_input,st.session_state.client,st.session_state.thread,
-                                                st.session_state.assistant,{'rewrite_instructions':edit_chapter_text},
-                                                )
+                                                st.session_state.assistant,{'rewrite_instructions':edit_chapter_text}
+                                                ,{"node_id":st.session_state.current_node_id})
 
                 await update_session_variables()
                 st.session_state.show_edit_input = False
@@ -168,7 +180,7 @@ async def main():
                 
                 await call_async_function_safely(run_graph_with_input,st.session_state.client,st.session_state.thread,
                                                 st.session_state.assistant,{'continue_instructions':next_chapter_text}
-                                                )
+                                                ,{"node_id":st.session_state.current_node_id})
                 await update_session_variables()
                 st.session_state.show_continue_input = False
                 st.rerun()
@@ -247,6 +259,48 @@ async def main():
             await call_async_function_safely(update_session_variables)
             st.rerun()
 
+    if st.session_state.current_node_id != '1':
+        _, col2a,col2b, _ = st.columns([1, 1,1, 1])
+        with col2a:
+            with stylable_container(
+                key="red_button",
+                css_styles="""
+                    button {
+                        background-color: red;
+                        color: white;
+                        border-radius: 20px;
+                    }
+                    """,
+            ):
+                if st.button("Bad writing",key = "red_button"):
+                    run_id = await call_async_function_safely(get_run_id_corresponding_to_node,st.session_state.client, \
+                                                        st.session_state.thread, str(int(st.session_state.current_node_id)-1))
+                    feedback_client.create_feedback(
+                        run_id=run_id,
+                        key="feedback-key",
+                        score=0.0,
+                        comment="comment",
+                    )
+        with col2b:
+            with stylable_container(
+                key="green_button",
+                css_styles="""
+                    button {
+                        background-color: green;
+                        color: white;
+                        border-radius: 20px;
+                    }
+                    """,
+            ):
+                if st.button("Good writing",key = "green_button"):
+                    run_id = await call_async_function_safely(get_run_id_corresponding_to_node,st.session_state.client, \
+                                                        st.session_state.thread, str(int(st.session_state.current_node_id)-1))
+                    feedback_client.create_feedback(
+                        run_id=run_id,
+                        key="feedback-key",
+                        score=1.0,
+                        comment="comment",
+                    )
 
 if __name__ == "__main__":
     asyncio.run(main())

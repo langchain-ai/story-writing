@@ -2,29 +2,28 @@ import streamlit as st
 from streamlit import components
 
 def main():
+    # Custom CSS to potentially hide tooltips on selectbox
+    custom_css = """
+    <style>
+    /* Example CSS to hide tooltips on selectbox */
+    option {
+        pointer-events: none; /* Disable mouse events */
+        cursor: default; /* Remove cursor change */
+        /* Add other CSS properties to hide tooltips */
+    }
+    </style>
+    """
 
-    # Define your options
-    options = ['Option 1', 'Option 2', 'Option 3']
+    # Injecting custom CSS
+    st.markdown(custom_css, unsafe_allow_html=True)
 
-    # Initialize session state variable
-    if 'selected_option' not in st.session_state:
-        st.session_state.selected_option = None
-        st.session_state.num_selected = 0
+    # Example usage of selectbox
 
-    # Create a selectbox with a placeholder
-    st.session_state.selected_option = st.selectbox("", \
-                     options=options, index=None,placeholder="Choose an option", \
-                        key=f"selectbox-{st.session_state.num_selected}")
+    _, col2, _ = st.columns([3, 1, 3])
+    with col2:
+        option = st.selectbox("Select an option", ["Option 1 more text", \
+                             "Option 2 also more text", "Option 3 lots of text"])
 
-    # React to option selection
-    
-    if st.session_state.selected_option is not None:
-        print(st.session_state.selected_option, st.session_state.num_selected)
-        st.session_state.num_selected += 1
-        
-        # Reset the selected option to None
-        #st.session_state.selected_option = None
-        st.rerun()
 
 
 

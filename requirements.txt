@@ -2,3 +2,4 @@ langgraph
 langchain_anthropic
 langchain_openai
 langgraph_cli
+langsmith
