@@ -4,12 +4,10 @@ from streamlit_navigation_bar import st_navbar
 import asyncio
 from langsmith import Client
 from streamlit_extras.stylable_container import stylable_container
-import os
-feedback_client = Client()
+feedback_client = Client(api_url="https://beta.api.smith.langchain.com")
 
 async def start_agent():
-    print(os.getenv("LANGCHAIN_API_KEY"))
-    client = get_client(url="https://ht-unhealthy-buffalo25-39d00f953458585aa9f7b5a4fa-g3ps4aazkq-uc.a.run.app")
+    client = get_client(url="https://ht-respectful-sundial-15-fbf5e59442b15c23a9306227-g3ps4aazkq-uc.a.run.app")
     assistants = await client.assistants.search()
     assistants = [a for a in assistants if not a['config']]
     thread = await client.threads.create()
