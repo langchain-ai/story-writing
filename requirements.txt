@@ -4,3 +4,5 @@ langchain_openai
 langgraph_cli
 langsmith
 langgraph_sdk
+streamlit_navigation_bar
+streamlit_extras
