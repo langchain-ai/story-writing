@@ -21,8 +21,7 @@ def get_public_ip():
         return None
 
 async def start_agent(ip_address):
-    client = get_client()
-        #url="https://ht-respectful-sundial-15-fbf5e59442b15c23a9306227-g3ps4aazkq-uc.a.run.app")
+    client = get_client(url="https://ht-respectful-sundial-15-fbf5e59442b15c23a9306227-g3ps4aazkq-uc.a.run.app")
     assistants = await client.assistants.search()
     assistants = [a for a in assistants if not a['config']]
     thread = await client.threads.create(metadata={"user":ip_address})
