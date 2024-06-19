@@ -3,6 +3,8 @@
   "dependencies": [
     "langchain_anthropic",
     "langgraph",
+    "langchain_openai",
+    "langchain_core",
     "."
   ],
   "graphs": {

@@ -6,14 +6,13 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from copy import deepcopy
 
-'''
-llm = ChatAnthropic(model="claude-3-haiku-20240307", max_tokens_to_sample=4000)
-summary_llm = ChatAnthropic(model="claude-3-sonnet-20240229")
-'''
-llm = ChatOpenAI(model="gpt-4o")
-summary_llm = ChatOpenAI(model="gpt-4o")
+title_llm = ChatOpenAI(model="gpt-4o",metadata={"name":"title_llm"})
+summary_llm = ChatOpenAI(model="gpt-4o",metadata={"name":"summary_llm"})
+brainstorm_llm = ChatOpenAI(model="gpt-4o",temperature=1,metadata={"name":"brainstorm_llm"})
+plan_llm = ChatAnthropic(model="claude-3-haiku-20240307",metadata={"name":"plan_llm"})
+write_llm = ChatAnthropic(model="claude-3-sonnet-20240229",metadata={"name":"write_llm"})
 
-messages = [
+summary_messages = [
     ("system", "You are an assistant solely focused on summarizing books. Your goal \
      is to summarize so that all logical dependencies are captured. It is not important for \
      you to summarize minute details but rather focus on important things like character names, \
@@ -22,9 +21,62 @@ messages = [
     ("human", "Please help me summarize the following book: {chapters_str}"),
 ]
 
-prompt = ChatPromptTemplate.from_messages(messages)
+brainstorm_messages = [
+    ("system", "You are an assistant tasked with brainstorming ideas for brainstorming ideas for \
+    a chapter in a story. You should brainstorm ideas relevant to the plotline and in accordance with \
+     the users wishes for the next chapter. You should brainstorm multiple ideas for what the chapter could \
+     be about, making detailed descriptions of all your ideas. Do not return anything other than a numbered list of ideas."),
+     ("human", "{summary_request}"),
+     ("human", "{detail_request}"),
+     ("human", "{style_request}"),
+     ("human", "This is the summary of the story up to this point: {story_summary}"),
+     ("human", "I would like to {action}. Can you please help me brainstorm ideas for that?")
+]
 
-summary_chain = prompt | summary_llm | StrOutputParser()
+outline_messages = [
+    ("system", "You are an assistant tasked with outlining a new chapter in a story. You will be provided with \
+     some potential ideas for the chapter. You should choose one of those ideas, and then write a clear outline \
+     for it. Your outline should include a beginning, middle, and end. You should only return the outline of the \
+     story, not any other information or text. Here is an example of what you should return: \
+     \
+     I. Introduction\n- **Setting Description:**\n  - The old mansion at the end of Hawthorn Lane, shrouded in mystery and ivy.\n  - Historical significance: Passed down through generations in Emma's family.\n- **Character Introduction:**\n  - Emma, 27 years old, determined to uncover family secrets.\n  - Mention of the secret room rumored by her great-grandmother.\n\n#### II. Emma's Curiosity and Determination\n- **Great-Grandmother's Mention:**\n  - Flashback to Emma's childhood memory of great-grandmother hinting at the secret room.\n- **Emma's Motivation:**\n  - Transition from childhood curiosity to adult determination to uncover the secret.\n\n#### III. The Stormy Evening\n- **Setting the Scene:**\n  - Description of the stormy evening: rain, wind, ancient trees.\n- **Preparation:**\n  - Emma armed with a flashlight and an old blueprint found in the attic.\n  - Description of the blueprint: yellowed, frayed, delicate.\n\n#### IV. Discovery of the Unmarked Space\n- **Blueprint Examination:**\n  - Emma tracing the lines and discovering the unmarked space between the library and the drawing-room.\n- **Realization:**\n  - Heart skipping a beat; determination to investigate further.\n\n#### V. The Library\n- **Description of the Library:**\n  - Cavernous room, floor-to-ceiling bookshelves, scent of aged paper.\n- **Search for Irregularities:**\n  - Emma scanning the walls, finding the worn bookshelf.\n- **The Lost Histories Book:**\n  - Discovery of the out-of-place leather-bound volume.\n  - Pulling the book to reveal the secret passage.\n\n#### VI. The Hidden Passage\n- **Bookshelf Mechanism:**\n  - Bookshelf swinging open to reveal a narrow passage.\n- **Initial Hesitation:**\n  - Emma’s breath catching, moment of hesitation.\n- **Descent:**\n  - Flashlight beam, steep spiral staircase, mix of fear and excitement.\n\n#### VII. The Secret Room\n- **Room Description:**\n  - Small, dimly lit, musty air.\n- **The Wooden Chest:**\n  - Intricately carved surface, Emma’s trembling fingers lifting the lid.\n- **Contents of the Chest:**\n  - Faded photographs, letters tied with ribbon, ornate key.\n\n#### VIII. Discoveries and Revelations\n- **Photographs:**\n  - Black-and-white image of great-grandmother and an unknown man.\n  - Noting the secret happiness in their eyes.\n- **Love Letters:**\n  - Untying the ribbon, reading the first letter.\n  - Story of forbidden love and a promise to protect their secret.\n\n#### IX. Emotional Connection\n- **Emma’s Reaction:**\n  - Eyes filling with tears, realization of the room’s significance.\n- **Legacy of Love:**\n  - Understanding the room as a sanctuary of love and resilience.\n- **The Ornate Key:**\n  - Speculation about what the key might unlock.\n\n#### X. Emma's Resolution\n- **Vow to Uncover the Full Story:**\n  - Determination to piece together the past.\n  - Honoring the legacy of love and courage.\n- **Emerging from the Secret Room:**\n  - Returning up the spiral staircase, storm waning, dawn breaking.\n\n#### XI. Conclusion\n- **Newfound Connection:**\n  - Deeper connection to heritage.\n  - Understanding the importance of discovering, cherishing, and passing on family secrets.\n- **End of a Mystery:**\n  - Mansion holds one less mystery.\n  - Walls whispering a new story of love and resilience.\n\n### Themes and Motifs\n- **Heritage and Legacy:**\n  - Importance of family history and secrets.\n- **Love and Resilience:**\n  - Enduring nature of love and strength across generations.\n- **Curiosity and Discovery:**\n  - Emma's journey from curiosity to discovery and understanding.\n  \n### Literary Devices\n- **Imagery:**\n  - Vivid descriptions of the mansion, storm, and secret room.\n- **Foreshadowing:**\n  - Hints from great-grandmother about the secret room.\n- **Symbolism:**\n  - The ornate key symbolizing unlocking the past and hidden truths."),
+     ("human", "{summary_request}"),
+     ("human", "{detail_request}"),
+     ("human", "{style_request}"),
+     ("human", "This is the summary of the story up to this point: {story_summary}"),
+     ("human", "Here are a list of ideas for the chapter I would like you to outline: {brainstorm_ideas}"),
+     ("human", "I would like to {action}. Can you please make a clear outline for that chapter?")
+]
+
+write_messages = [
+    ("system", "You are an assistant tasked with writing book chapters. You will receive an outline \
+     of the chapter and you should return the content of the chapter only. Do not return the chapter numnber, the chapter title, or any other information \
+     related to the chapter. Just write the words that would appear on the page. You should \
+     return the content like the following example: \
+     \
+     \
+     The old mansion stood at the end of Hawthorn Lane, shrouded in mystery and ivy. It had been in Emma\'s family for generations, passed down from one enigmatic ancestor to another. Though the house had always been a source of curiosity, none of the family\'s secrets intrigued Emma quite as much as the rumored secret room.\n\nHer great-grandmother had once mentioned it in passing, her eyes twinkling with a mixture of mischief and nostalgia. But Emma had been too young to press for details then. Now, at twenty-seven, her curiosity had matured into a determination.\n\nIt was a stormy evening when Emma decided to search for the room. The rain battered against the windows, and the wind howled through the ancient trees surrounding the mansion. Armed with a flashlight and an old, dusty blueprint of the house she found in the attic, she made her way through the labyrinthine corridors.\n\nThe blueprint had been yellowed with age, its edges frayed and delicate. Emma traced her finger along the lines, noting the familiar rooms and passages. Her heart skipped a beat when she noticed a small, unmarked space between the library and the drawing-room—an area that didn’t correspond with any door or window she knew of.\n\nShe hurried to the library, her footsteps echoing in the vast, empty halls. The library was a cavernous room, filled with floor-to-ceiling bookshelves and the comforting scent of aged paper. She scanned the walls, searching for any irregularities. Her eyes landed on a particular bookshelf, slightly more worn than the others, its wood darker and dustier.\n\nEmma approached it cautiously, running her fingers along the spines of the old books. One of the books, a leather-bound volume titled \"The Lost Histories,\" seemed oddly out of place. She pulled it, and with a soft click, the entire bookshelf swung open to reveal a narrow passage.\n\nHer breath caught in her throat. The flashlight beam sliced through the darkness, revealing a steep, spiral staircase. She hesitated only for a moment before descending, her heart pounding with a mix of fear and excitement.\n\nThe staircase led to a small, dimly lit room. The air was musty, filled with the scent of forgotten memories. In the center of the room stood a wooden chest, its surface intricately carved with symbols Emma didn\'t recognize. She knelt beside it, her fingers trembling as she lifted the lid.\n\nInside the chest were relics of the past: faded photographs, letters tied with ribbon, and a peculiar, ornate key. Emma picked up one of the photographs. It was a black-and-white image of her great-grandmother as a young woman, standing beside a man Emma had never seen before. They were smiling, their eyes filled with a secret happiness.\n\nShe turned her attention to the letters, carefully untying the ribbon. The delicate parchment crackled as she unfolded the first one. It was a love letter, written in elegant, flowing script. As she read, a story unfolded—a tale of forbidden love, hidden meetings, and a promise to protect their secret at all costs.\n\nEmma\'s eyes filled with tears. The secret room was more than just a hidden space; it was a sanctuary of love, a testament to the resilience of her great-grandmother\'s spirit. The ornate key, she realized, must unlock something even more precious.\n\nWith newfound determination, Emma vowed to uncover the full story. She would piece together the fragments of the past, honoring the legacy of love and courage that had been hidden away for so long.\n\nAs she made her way back up the spiral staircase, the storm outside began to wane, the first rays of dawn breaking through the clouds. The secret room had given her more than just answers; it had bestowed upon her a deeper connection to her heritage, a reminder that some secrets are meant to be discovered, cherished, and passed on.\n\nAnd thus, the old mansion at the end of Hawthorn Lane held one less mystery, but its walls whispered a new story—a story of love, hidden away but never forgotten. \
+    \
+    Please remember to always only return the chapter writing itself. Do not return any other text."),
+     ("human", "{summary_request}"),
+     ("human", "{detail_request}"),
+     ("human", "{style_request}"),
+     ("human", "This is the summary of the story up to this point: {story_summary}"),
+     ("human", "Here is the outline I would like you to follow when writing the chapter: {outline}"),
+     ("human", "I would like to {action}. Can you please write the chapter for me, remebering to follow the outline I just provided? Pleease remember to return the chapter text only, not any commentary to the user or additional text.")
+]
+
+summary_prompt = ChatPromptTemplate.from_messages(summary_messages)
+brainstorm_prompt = ChatPromptTemplate.from_messages(brainstorm_messages)
+outline_prompt = ChatPromptTemplate.from_messages(outline_messages)
+write_prompt = ChatPromptTemplate.from_messages(write_messages)
+
+# Turn these into nodes with llm as router to run tests on each of the chains
+# Add few shot prompting to improve the performance (get results from Langsmith)
+summary_chain = summary_prompt | summary_llm | StrOutputParser()
+brainstorm_chain = brainstorm_prompt | brainstorm_llm | StrOutputParser()
+outline_chain = outline_prompt | plan_llm | StrOutputParser()
+write_chain = write_prompt | write_llm | StrOutputParser()
 
 class Chapter(TypedDict):
     content: str
@@ -44,106 +96,65 @@ class State(TypedDict):
     summary: str
     details: str
     style: str
+    summary_request: str = ""
+    detail_request: str = ""
+    style_request: str = ""
     chapter_graph: Annotated[dict[str, Chapter], update_chapter_graph]
     chapter_id_viewing: str
     current_chapter_id: str
     rewrite_instructions: str
     continue_instructions: str
+    story_title: str = ""
 
-instructions = """Your task is to collaborate with the user to write a novel, chapter by chapter, using the following process:
-
-First, gather the initial information from the user:
-
-<init>
-Novel concept summary: {summary}
-Additional details to include: {details}
-Preferred writing style: {style}
-</init>
-
-Then, for each chapter:
-
-<Chapter>
-<brainstorm>
-Review the novel concept, details, and previously written chapters. Brainstorm multiple ideas for plot, character development, symbols, allusion, and themes. Create a rough outline of the major events and scenes. Make notes on the chapter's beginning, middle, and end. Make multiple ideas for each part of the chapter.
-</brainstorm>
-<filtering>
-Filter the brainstorm, only using the ideas that fit logically in the plot and follow the users instructions fairly rigidly.
-</filtering>
-<content>
-Write a full, final draft of the chapter (2000-5000 words). Follow the outline and notes, maintaining the desired style and details. Focus on engaging storytelling, vivid descriptions, and realistic dialogue. Make sure there are no logical inconsitencies in the story as well. Do not include any of the brainstorm or the title of the chapter in the content, just the actual content of the chapter.
-</content>
-<chaptertitle>
-Based on the final draft of the chapter, select a short chapter title that fits well. Plase don't include newline characters in the chapter title.
-</chaptertitle>
-</Chapter>
-
-The keys to success are:
-- Communicate clearly and work collaboratively with the user. Be well-attuned to their preferences and vision.
-- Be organized and keep the novel's concept summary in mind, do not deviate too far from the summary and other prompts the user enters.
-- Incorporate feedback graciously while preserving story integrity.
-- Try to use the writig style and sound as similar to it as you can.
-- Pay attention to detail in writing, revising and proofreading, make sure it reads like a novel not a blog post or short story.
-- Keep the formatting strict, write the chapter content inbetween <content> </content> tags, and write the chapter title in between <chaptertitle> </chaptertitle> tags. Do not write the chapter title at the start of the the <content> </content> tags.
-Always respond using the 'Chapter' function and then immediately stop. Do not respond by saying something along the lines of: I understand the task and am ready to help. Always return a written chapter, following the <Chapter> function instructions."""
-
-edit_prompt = """Here's what we have so far:
-
-<Progress>
-{chapters_summary}
-</Progress>
-
-Here is the current state of the new chapter:
+edit_prompt = """Here is the current state of the new chapter:
 
 <Draft>
 {draft}
 </Draft>
 
-Here are some edits we want to make to that chapter:
+Here are some edits I want to make to that chapter:
 
 <EditInstructions>
 {edit}
-</EditInstructions>
+</EditInstructions>"""
 
-Rewrite the the chapter with those instructions in mind. Reminder to respond in the correct <Chapter> form.
-That means writing both <content> and a new <chaptertitle>. Please make sure to only return text that is in the story, not any comments you have to the user.
-Ensure that any edits do not detract from the overall plot of the chapter unless you were specifically instructed to do so by the user."""
-
-continue_prompt = """Here's what we have so far:
-
-<Progress>
-{chapters_summary}
-</Progress>
-
-Write the next chapter in this story, keeping the following instructions in mind
+continue_prompt = """Here is what I want in the next chapter:
 
 <Instructions>
 {instructions}
-</Instructions>
+</Instructions>"""
 
-Write the next chapter with those instructions in mind.
-This chapter should pick up seamlessly from the previous chapters.
-It should be a logical follow up.
-Reminder to respond in the correct <Chapter> form."""
+def write_chapter(user_message, chapters_summary, state):
+    brainstorm_ideas = brainstorm_chain.invoke({'story_summary':chapters_summary,'action':user_message,'summary_request':state['summary_request'], \
+                                                'detail_request':state['detail_request'],'style_request':state['style_request']})
+    outline = outline_chain.invoke({'story_summary':chapters_summary,'action':user_message,'summary_request':state['summary_request'], \
+                                                'detail_request':state['detail_request'],'style_request':state['style_request'],'brainstorm_ideas':brainstorm_ideas})
 
-def parse(txt: str):
-    chapter_txt = txt
-    if "<content>" in txt and "</content>" in txt:
-        chapter_txt = txt.split("<content>")[1]
-        chapter_txt = chapter_txt.split("</content>")[0]
-    title = ""
-    if "<chaptertitle>" in txt and "</chaptertitle>" in txt:
-        title = txt.split("<chaptertitle>")[1]
-        title = title.split("</chaptertitle>")[0]
-    return chapter_txt, title
+    response = write_chain.invoke({'story_summary':chapters_summary,'action':user_message,'summary_request':state['summary_request'], \
+                                                'detail_request':state['detail_request'],'style_request':state['style_request'],'outline':outline})
+    chapter_content = response
+    chapter_title = summary_llm.invoke(f"Please come up with a title for the following chapter: {chapter_content}. The title should be 6 words or less.").content.replace("\"","").replace("\'","")
+    return chapter_content, chapter_title
+
+def get_title(state,first_chapter):
+    return title_llm.invoke(f"Please come up with a short title, less than 6 words, for a story. The story has the following overall plot {state['summary']}, and here is the first chapter {first_chapter}").content.replace("\"","").replace("\'","")
 
 def write_first_chapter(state):
-    prompt = instructions.format(summary=state['summary'], details=state['details'], style=state['style'])
-    response = llm.invoke(prompt)
-    chapter_content, chapter_title = parse(response.content)
+    if state['summary']:
+        state['summary_request'] = f"I would like the overall plot of the story to be {state['summary']}"
+    
+    if state['details']:
+        state['detail_request'] = f"I would like you to keep the following details in mind when writing {state['details']}"
+    
+    if state['style']:
+        state['style_request'] = f"Please make sure to use the following writing style {state['style']}"
+    chapter_content, chapter_title = write_chapter("Please write the first chapter of this story.", "no story up to this point, this is the first chapter!", state)
 
+    
     state['current_chapter_id'] = '1'
     state['chapter_id_viewing'] = '1'
     state['chapter_graph'] = {'1':Chapter(content=chapter_content,title=chapter_title,children=[],siblings=[],cousins=[],parent='-1')}
+    state['story_title'] = get_title(state,chapter_content)
     return state
 
 def summarize_current_story(state,chapter_id):
@@ -166,9 +177,8 @@ def edit_chapter(state):
         draft=state['chapter_graph'][state['chapter_id_viewing']]['content'], 
         edit=state['rewrite_instructions']
     )
-    prompt = instructions.format(summary=state['summary'], details=state['details'], style=state['style'])
-    response = llm.invoke([{"role": "system", "content": prompt}, {"role": "user", "content": user_message}])
-    chapter_content, chapter_title = parse(response.content)
+
+    chapter_content, chapter_title = write_chapter(user_message, chapters_summary, state)
     
     #create new chapter
     state['chapter_graph'][str(int(state["current_chapter_id"])+1)] = Chapter(content=chapter_content,title=chapter_title,children=[], \
@@ -191,10 +201,8 @@ def continue_chapter(state):
         chapters_summary=chapters_summary, 
         instructions=state['continue_instructions']
     )
-    prompt = instructions.format(summary=state['summary'], details=state['details'], style=state['style'])
-    response = llm.invoke([{"role": "system", "content": prompt}, {"role": "user", "content": user_message}])
-    chapter_content, chapter_title = parse(response.content)
-
+    
+    chapter_content, chapter_title = write_chapter(user_message, chapters_summary, state)
     #create new chapter
     state['chapter_graph'][str(int(state["current_chapter_id"])+1)] = Chapter(content=chapter_content,title=chapter_title,children=[],siblings=[], \
                                                    cousins=deepcopy(state["chapter_graph"][state["chapter_id_viewing"]]['children']),\
