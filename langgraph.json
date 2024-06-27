@@ -1,10 +1,6 @@
 {
   "python_version": "3.11",
   "dependencies": [
-    "langchain_anthropic",
-    "langgraph",
-    "langchain_openai",
-    "langchain_core",
     "."
   ],
   "graphs": {

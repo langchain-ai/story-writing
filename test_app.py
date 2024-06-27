@@ -1,32 +1,36 @@
 import streamlit as st
-from streamlit import components
+import streamlit as st 
+
+st.set_page_config(layout="wide")
 
 def main():
-    # Custom CSS to potentially hide tooltips on selectbox
-    custom_css = """
-    <style>
-    /* Example CSS to hide tooltips on selectbox */
-    option {
-        pointer-events: none; /* Disable mouse events */
-        cursor: default; /* Remove cursor change */
-        /* Add other CSS properties to hide tooltips */
-    }
-    </style>
-    """
+    st.title("Multiple Columns Example")
 
-    # Injecting custom CSS
-    st.markdown(custom_css, unsafe_allow_html=True)
+    # First set of columns
+    col1, col2 = st.columns([1, 3])
 
-    # Example usage of selectbox
+    with col1:
+        st.header("Column 1")
+        st.write("Content for column 1")
 
-    _, col2, _ = st.columns([3, 1, 3])
     with col2:
-        option = st.selectbox("Select an option", ["Option 1 more text", \
-                             "Option 2 also more text", "Option 3 lots of text"])
+        st.header("Column 2")
+        st.write("Content for column 2")
 
+    # Second set of columns
+    col3, col4, col5 = st.columns([1, 1, 1])
 
+    with col3:
+        st.header("Column 3")
+        st.write("Content for column 3")
 
+    with col4:
+        st.header("Column 4")
+        st.write("Content for column 4")
 
+    with col5:
+        st.header("Column 5")
+        st.write("Content for column 5")
 
 if __name__ == "__main__":
     main()

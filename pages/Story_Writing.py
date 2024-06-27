@@ -6,6 +6,7 @@ import asyncio
 from langsmith import Client
 from streamlit_extras.stylable_container import stylable_container
 import requests
+st.set_page_config(layout="wide")
 
 feedback_client = Client(api_url="https://beta.api.smith.langchain.com")
 
@@ -72,7 +73,7 @@ async def run_graph_with_input(client,thread,assistant,input,metadata={}):
     # Need to add streaming capability
     data = []
     async for chunk in client.runs.stream(
-    thread['thread_id'], assistant['assistant_id'], input=input, config={'configurable':metadata}, stream_mode="updates",
+    thread['thread_id'], assistant['assistant_id'], input=input, config={'configurable':metadata}, stream_mode="updates", multitask_strategy="rollback",
 ):
         if chunk.data and 'run_id' not in chunk.data:
             for t in ['rewrite','continue','first']:
@@ -93,7 +94,9 @@ llm_to_title = {
 
 async def generate_answer(placeholder, placeholder_title, input, client, thread, assistant, metadata = {}):
         current_llm = "starting"
-        placeholder_title.write(llm_to_title[current_llm])
+        placeholder_title.markdown(f"<h4 style='text-align: center; color: rgb(206,234,253);'>  \
+                {llm_to_title[current_llm]} \
+                </h4>",unsafe_allow_html=True)
         current_ind = 0
         ans = ""
         async for chunk in client.runs.stream(
@@ -103,7 +106,9 @@ async def generate_answer(placeholder, placeholder_title, input, client, thread,
             if chunk.data and 'run_id' not in chunk.data:
                 if isinstance(chunk.data,dict):
                     current_llm = chunk.data[list(chunk.data.keys())[0]]['metadata']['name']
-                    placeholder_title.write(llm_to_title[current_llm])
+                    placeholder_title.markdown(f"<h4 style='text-align: center; color: rgb(206,234,253);'>  \
+                {llm_to_title[current_llm]} \
+                </h4>",unsafe_allow_html=True)
                 elif current_llm == "write_llm" and chunk.data[0]['content']:
                     ans += chunk.data[0]['content'][current_ind:]
                     placeholder.info(ans)
@@ -161,6 +166,7 @@ async def update_session_variables():
 async def reset_session_variables(ip_address):
     st.session_state.chapter_graph = {"-1":{'content':"Click Start Story to begin writing!", 'title':"Pre-start Chapter"}}
     st.session_state.currently_selected_chapter = "-1"
+    st.session_state.chapter_number = 0
     st.session_state.current_node_id = '1'
     st.session_state.story_title = ""
     st.session_state.current_chapter_options = ["-1"]
@@ -170,10 +176,18 @@ async def stream(*args):
     await asyncio.gather(call_async_function_safely(generate_answer,*args))
 
 async def main():
+    st.markdown("""
+    <style>
+    /* Centering title horizontally */
+    .centered-title {
+        text-align: center;
+    }
+    </style>
+    """, unsafe_allow_html=True)
     if "story_title" not in st.session_state or st.session_state.story_title == "":
-        st.title("Story Writing with Langgraph")
+        st.markdown("<h1 class='centered-title'>Story Writing with Langgraph</h1>", unsafe_allow_html=True)
     else:
-        st.title(st.session_state.story_title)
+        st.markdown(f"<h1 class='centered-title'>{st.session_state.story_title}</h1>", unsafe_allow_html=True)
 
     if "page_loaded" not in st.session_state:
         st.session_state.page_loaded = False
@@ -227,13 +241,12 @@ async def main():
                 await stream(st.session_state.box,st.session_state.box_title,{'summary':summary_text,'details':detail_text,'style':style_text},st.session_state.client,st.session_state.thread,
                                                 st.session_state.assistant,{"node_id":st.session_state.current_node_id})
 
-                st.session_state.box_title.write("Saving chapter and returning to story view")
-                await asyncio.sleep(5)
 
                 st.session_state.story_started = True
                 await update_session_variables()
                 st.session_state.show_start_input = False
                 st.session_state.writing = False
+                st.session_state.chapter_number = 1
                 st.rerun()
     elif st.session_state.show_edit_input:
         edit_chapter_text = st.sidebar.text_area("Edit Instructions")
@@ -249,8 +262,7 @@ async def main():
                 await stream(st.session_state.box,st.session_state.box_title,{'rewrite_instructions':edit_chapter_text},st.session_state.client,st.session_state.thread,
                                                 st.session_state.assistant,{"node_id":st.session_state.current_node_id})
 
-                st.session_state.box_title.write("Saving chapter and returning to story view")
-                await asyncio.sleep(5)
+
                 await update_session_variables()
                 st.session_state.show_edit_input = False
                 st.session_state.writing = False
@@ -269,11 +281,11 @@ async def main():
                 
                 await stream(st.session_state.box,st.session_state.box_title,{'continue_instructions':next_chapter_text},st.session_state.client,st.session_state.thread,
                                                 st.session_state.assistant,{"node_id":st.session_state.current_node_id})
-                st.session_state.box_title.write("Saving chapter and returning to story view")
-                await asyncio.sleep(5)
+
                 await update_session_variables()
                 st.session_state.show_continue_input = False
                 st.session_state.writing = False
+                st.session_state.chapter_number += 1
                 st.rerun()
     elif st.session_state.show_load_story:
         col1, col2 = st.sidebar.columns([1, 1])
@@ -318,6 +330,15 @@ async def main():
 
     st.sidebar.write(" ")  
 
+    st.markdown("""
+    <style>
+    div[data-testid="stHorizontalBlock"] > * {
+        max-height: 300px;
+        overflow-y: auto;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
     col1, _, col3 = st.columns([1, 2, 1]) 
 
     if st.session_state.writing == False:
@@ -328,7 +349,9 @@ async def main():
                                                                     label_visibility="collapsed",key=f"previous_chapter_{st.session_state.num_selected}")
             else:
                 st.session_state.selected_previous_chapter = None
-                st.write("No previous chapters!")
+                st.markdown(f"<p style='text-align: center;'>  \
+                No previous chapters! \
+                </p>",unsafe_allow_html=True)
 
 
             if st.session_state.selected_previous_chapter is not None:
@@ -337,6 +360,7 @@ async def main():
                 
                 await call_async_function_safely(update_current_state,st.session_state.client,st.session_state.thread,{'chapter_id_viewing':new_chapter_selected})
                 await call_async_function_safely(update_session_variables)
+                st.session_state.chapter_number -= 1
                 st.rerun()
         with col3:
             options = transform_titles_into_options([st.session_state.chapter_graph[chapter_id]['title'] for chapter_id in st.session_state.next_chapter_options])
@@ -345,7 +369,9 @@ async def main():
                                                                     label_visibility="collapsed",key=f"next_chapter_{st.session_state.num_selected}")
             else:
                 st.session_state.selected_next_chapter = None
-                st.write("No next chapters!")
+                st.markdown(f"<p style='text-align: center;'>  \
+                No next chapters! \
+                </p>",unsafe_allow_html=True)
 
 
             if st.session_state.selected_next_chapter is not None:
@@ -354,36 +380,48 @@ async def main():
 
                     await call_async_function_safely(update_current_state,st.session_state.client,st.session_state.thread,{'chapter_id_viewing':new_chapter_selected})
                     await call_async_function_safely(update_session_variables)
+                    st.session_state.chapter_number += 1
                     st.rerun()
 
     _, col_middle_title, _ = st.columns([1, 6, 1])
     
-    if "box_title" not in st.session_state:
+    if "box_title" not in st.session_state or st.session_state.writing == False:
         st.session_state.box_title = col_middle_title.empty()
     elif st.session_state.writing == True:
         with col_middle_title:
-            st.write("Waiting for user input...")
+            st.markdown(f"<h4 style='text-align: center; color: rgb(206,234,253);'>  \
+                Waiting for user input... \
+                </h4>",unsafe_allow_html=True)
 
-    _, col_middle, _ = st.columns([1, 6, 1])
+    st.session_state.chapter_title = st.markdown(f"<h2 style='text-align: center; color: white;'>  \
+                {st.session_state.chapter_graph[st.session_state.currently_selected_chapter]['title']} \
+                </h2>",unsafe_allow_html=True)
+    _, col_middle, col_scroll = st.columns([1, 6, 1])
     if "box" not in st.session_state:
         st.session_state.box = col_middle.empty()
+        st.rerun()
+    else:
+        st.session_state.box.info(st.session_state.chapter_graph[st.session_state.currently_selected_chapter]['content'])
 
-    if st.session_state.writing == False:
-        st.session_state.chapter_title = st.markdown(f"<h2 style='text-align: center; color: white;'>  \
-                    {st.session_state.chapter_graph[st.session_state.currently_selected_chapter]['title']} \
-                    </h2>",unsafe_allow_html=True)
-        st.session_state.chapter_content = st.text_area(" ", value=st.session_state.chapter_graph[st.session_state.currently_selected_chapter]['content'], height=450)
+    with col_scroll:
+        st.write("🔺  \nScroll  \n🔻")
     
+    st.markdown(f"<h5 style='text-align: center;'>  \
+                Chapter {st.session_state.chapter_number} \
+                </h5>",unsafe_allow_html=True)
+
     _, col2, _ = st.columns([1, 2, 1])
     if st.session_state.writing == False:
         with col2:
-            options = transform_titles_into_options([st.session_state.chapter_graph[chapter_id]['title'] for chapter_id in st.session_state.current_chapter_options])
+            options = transform_titles_into_options([st.session_state.chapter_graph[chapter_id]['title'] for chapter_id in st.session_state.current_chapter_options if chapter_id != "-1"])
             if len(options) > 0:
                 st.session_state.selected_current_chapter = st.selectbox("",options,index=None,placeholder="Select current chapter", \
                                                                     label_visibility="collapsed",key=f"current_chapter_{st.session_state.num_selected}")
             else:
                 st.session_state.selected_current_chapter = None
-                st.write("No alternate current chapters!")
+                st.markdown(f"<p style='text-align: center;'>  \
+                No alternate current chapters! \
+                </p>",unsafe_allow_html=True)
 
             if st.session_state.selected_current_chapter is not None:
                 st.session_state.num_selected += 1
@@ -404,6 +442,7 @@ async def main():
                             background-color: red;
                             color: white;
                             border-radius: 20px;
+                            margin-left: 80px;
                         }
                         """,
                 ):
@@ -424,6 +463,7 @@ async def main():
                             background-color: green;
                             color: white;
                             border-radius: 20px;
+                            margin-left: 80px;
                         }
                         """,
                 ):

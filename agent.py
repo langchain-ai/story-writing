@@ -133,11 +133,11 @@ def write_chapter(user_message, chapters_summary, state):
     response = write_chain.invoke({'story_summary':chapters_summary,'action':user_message,'summary_request':state['summary_request'], \
                                                 'detail_request':state['detail_request'],'style_request':state['style_request'],'outline':outline})
     chapter_content = response
-    chapter_title = summary_llm.invoke(f"Please come up with a title for the following chapter: {chapter_content}. The title should be 6 words or less.").content.replace("\"","").replace("\'","")
+    chapter_title = summary_llm.invoke(f"Please come up with a title for the following chapter: {chapter_content}. The title should be 6 words or less.").content.replace("\"","")
     return chapter_content, chapter_title
 
 def get_title(state,first_chapter):
-    return title_llm.invoke(f"Please come up with a short title, less than 6 words, for a story. The story has the following overall plot {state['summary']}, and here is the first chapter {first_chapter}").content.replace("\"","").replace("\'","")
+    return title_llm.invoke(f"Please come up with a short title, less than 6 words, for a story. The story has the following overall plot {state['summary']}, and here is the first chapter {first_chapter}").content.replace("\"","")
 
 def write_first_chapter(state):
     if state['summary']:
