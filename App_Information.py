@@ -1,4 +1,5 @@
 import streamlit as st
+import asyncio
 
 async def main():
     st.markdown("""
@@ -120,4 +121,4 @@ async def main():
     ''')
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
