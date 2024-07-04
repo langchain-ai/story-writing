@@ -8,28 +8,10 @@ from streamlit_extras.stylable_container import stylable_container
 import requests
 st.set_page_config(layout="wide")
 
+# Langsmith feedback client
 feedback_client = Client(api_url="https://beta.api.smith.langchain.com")
 
-def get_public_ip():
-    try:
-        # Use an external API to fetch public IP address
-        response = requests.get('https://api64.ipify.org?format=json')
-        data = response.json()
-        ip_address = data['ip']
-        return ip_address
-    except requests.RequestException as e:
-        print(f"Error fetching IP address: {e}")
-        return None
-
-async def start_agent(ip_address):
-    client = get_client(url="https://ht-monthly-attachment-15-c1f10ef48e7c5c198bda57ca-g3ps4aazkq-uc.a.run.app")
-    assistants = await client.assistants.search()
-    assistants = [a for a in assistants if not a['config']]
-    thread = await client.threads.create(metadata={"user":ip_address})
-    assistant = assistants[0]
-    return [client,thread,assistant]
-
-
+# Find run id for giving feedback
 async def get_run_id_corresponding_to_node(client, thread, node_id):
     '''Get the run id corresponding to the chapter written'''
     runs = await client.runs.list(thread_id=thread['thread_id'])
@@ -39,25 +21,22 @@ async def get_run_id_corresponding_to_node(client, thread, node_id):
             return r['run_id']
     return None
 
-async def get_new_thread(client,ip_address):
-    thread = await client.threads.create(metadata={"user":ip_address})
-    return thread
+# Create the agent
+async def start_agent(session_id):
+    client = get_client(url="https://ht-monthly-attachment-15-c1f10ef48e7c5c198bda57ca-g3ps4aazkq-uc.a.run.app")
+    assistants = await client.assistants.search()
+    assistants = [a for a in assistants if not a['config']]
+    thread = await client.threads.create(metadata={"user":session_id})
+    assistant = assistants[0]
+    return [client,thread,assistant]
 
+# Find a story that we had previously written
 async def get_thread_state(client,thread_id):
     return await client.threads.get_state(thread_id)
 
-async def get_user_threads(client,ip_address):
-    try:
-        # Try to run the async function using the existing event loop
-        threads = await client.threads.search(metadata={"user":ip_address})
-    except RuntimeError as e:
-        if "Event loop is closed" in str(e):
-            # If the event loop is closed, create a new one and run the async function
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            threads = await client.threads.search(metadata={"user":ip_address})
-        else:
-            raise e
+# Find stories user has written
+async def get_user_threads(client,session_id):
+    threads = await client.threads.search(metadata={"user":session_id})
     
     untitled_count = 1
     for t in threads:
@@ -69,58 +48,55 @@ async def get_user_threads(client,ip_address):
             untitled_count += 1
     return threads
 
-async def run_graph_with_input(client,thread,assistant,input,metadata={}):
-    # Need to add streaming capability
-    data = []
-    async for chunk in client.runs.stream(
-    thread['thread_id'], assistant['assistant_id'], input=input, config={'configurable':metadata}, stream_mode="updates", multitask_strategy="rollback",
-):
-        if chunk.data and 'run_id' not in chunk.data:
-            for t in ['rewrite','continue','first']:
-                try:
-                    data = chunk.data[t]['chapters']
-                except:
-                    pass
-    return data
-
 llm_to_title = {
     "starting":"Waiting for user input ...",
     "brainstorm_llm": "Brainstorming ideas for chapter...",
     "plan_llm": "Planning outline for chapter...",
     "summary_llm": "Summarizing story so far...",
     "write_llm": "Writing the chapter...",
-    "title_llm": "Generating a title for the story..."
+    "title_llm": "Generating a title for the story...",
+    "chapter_title_llm": "Generating title for chapter..."
 }
 
+# Streaming chapter writing
 async def generate_answer(placeholder, placeholder_title, input, client, thread, assistant, metadata = {}):
-        current_llm = "starting"
-        placeholder_title.markdown(f"<h4 style='text-align: center; color: rgb(206,234,253);'>  \
-                {llm_to_title[current_llm]} \
-                </h4>",unsafe_allow_html=True)
-        current_ind = 0
-        ans = ""
-        async for chunk in client.runs.stream(
-        thread['thread_id'], assistant['assistant_id'], input=input, config={"configurable":metadata}, \
-            stream_mode="messages",
-        ):
-            if chunk.data and 'run_id' not in chunk.data:
-                if isinstance(chunk.data,dict):
-                    current_llm = chunk.data[list(chunk.data.keys())[0]]['metadata']['name']
-                    placeholder_title.markdown(f"<h4 style='text-align: center; color: rgb(206,234,253);'>  \
-                {llm_to_title[current_llm]} \
-                </h4>",unsafe_allow_html=True)
-                elif current_llm == "write_llm" and chunk.data[0]['content']:
-                    ans += chunk.data[0]['content'][current_ind:]
-                    placeholder.info(ans)
-                    current_ind += len(chunk.data[0]['content'][current_ind:])
+    current_llm = "starting"
+    chapter_written = False
+    placeholder_title.markdown(f"<h4 style='text-align: center; color: rgb(206,234,253);'>  \
+            {llm_to_title[current_llm]} \
+            </h4>",unsafe_allow_html=True)
+    current_ind = 0
+    ans = ""
+    async for chunk in client.runs.stream(
+    thread['thread_id'], assistant['assistant_id'], input=input, config={"configurable":metadata}, \
+        stream_mode="messages", multitask_strategy="rollback"
+    ):
+        if chunk.data and 'run_id' not in chunk.data:
+            if isinstance(chunk.data,dict):
+                current_llm = chunk.data[list(chunk.data.keys())[0]]['metadata']['name']
+                placeholder_title.markdown(f"<h4 style='text-align: center; color: rgb(206,234,253);'>  \
+            {llm_to_title[current_llm]} \
+            </h4>",unsafe_allow_html=True)
+            elif current_llm == "write_llm" and chunk.data[0]['content']:
+                ans += chunk.data[0]['content'][current_ind:]
+                placeholder.info(ans)
+                current_ind += len(chunk.data[0]['content'][current_ind:])
 
+# Update variables after chapter has been written
 async def get_current_state(client,thread):
     current_state = await client.threads.get_state(thread_id=thread['thread_id'])
     return current_state
 
+# When user selects a different chapter to view
 async def update_current_state(client,thread,values):
-    updated_state = await client.threads.update_state(thread_id=thread['thread_id'],values=values)
+    await client.threads.update_state(thread_id=thread['thread_id'],values=values)
 
+# Create new thread for new story
+async def get_new_thread(client,session_id):
+    thread = await client.threads.create(metadata={"user":session_id})
+    return thread
+
+# Make sure event loop never closes
 async def call_async_function_safely(func,*args):
     try:
         # Try to run the async function using the existing event loop
@@ -135,6 +111,7 @@ async def call_async_function_safely(func,*args):
             raise e
     return result
 
+# Helper function for chapter options
 def transform_titles_into_options(titles):
     name_counts = {}
     for name in set(titles):
@@ -152,6 +129,7 @@ def transform_titles_into_options(titles):
 
     return transformed_titles[::-1]
 
+# Update variables after writing
 async def update_session_variables():
     current_state = await call_async_function_safely(get_current_state,st.session_state.client,st.session_state.thread)
     st.session_state.chapter_graph = current_state['values']['chapter_graph']
@@ -162,8 +140,9 @@ async def update_session_variables():
     st.session_state.current_chapter_options = st.session_state.chapter_graph[st.session_state.currently_selected_chapter]['siblings'] \
                                                 + st.session_state.chapter_graph[st.session_state.currently_selected_chapter]['cousins'] + [st.session_state.currently_selected_chapter]
     st.session_state.previous_chapter_options = [x for x in [st.session_state.chapter_graph[st.session_state.currently_selected_chapter]['parent']] if x!= '-1']
-        
-async def reset_session_variables(ip_address):
+
+# Reset variables on new story     
+async def reset_session_variables():
     st.session_state.chapter_graph = {"-1":{'content':"Click Start Story to begin writing!", 'title':"Pre-start Chapter"}}
     st.session_state.currently_selected_chapter = "-1"
     st.session_state.chapter_number = 0
@@ -185,7 +164,7 @@ async def main():
     </style>
     """, unsafe_allow_html=True)
     if "story_title" not in st.session_state or st.session_state.story_title == "":
-        st.markdown("<h1 class='centered-title'>Story Writing with Langgraph</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 class='centered-title'>Story Writing with LangGraph</h1>", unsafe_allow_html=True)
     else:
         st.markdown(f"<h1 class='centered-title'>{st.session_state.story_title}</h1>", unsafe_allow_html=True)
 
@@ -195,11 +174,13 @@ async def main():
         st.session_state.story_title = ""
         st.session_state.num_selected = 0
         st.session_state.writing = False
-        st.session_state.ip_address = ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
+
+    if "session_id" not in st.session_state:
+        st.session_state.session_id = ''.join(random.choices(string.ascii_letters + string.digits, k=10))
 
     if st.session_state.page_loaded == False:
-        st.session_state.client,st.session_state.thread,st.session_state.assistant = await call_async_function_safely(start_agent,st.session_state.ip_address)
-        await reset_session_variables(st.session_state.ip_address)
+        st.session_state.client,st.session_state.thread,st.session_state.assistant = await call_async_function_safely(start_agent,st.session_state.session_id)
+        await reset_session_variables()
         st.session_state.page_loaded = True
 
     if "story_started" not in st.session_state:
@@ -217,7 +198,7 @@ async def main():
     if "show_load_story" not in st.session_state:
         st.session_state.show_load_story = False
 
-
+    # Starting/New story
     if st.session_state.show_start_input:
         summary_text = st.sidebar.text_area("Summary")
         detail_text = st.sidebar.text_area("Details")
@@ -233,14 +214,11 @@ async def main():
                 st.session_state.writing = True
                 # If we start a new story, reset all of our session variables
                 if st.session_state.story_started:
-                    st.session_state.thread = await call_async_function_safely(get_new_thread,st.session_state.client,st.session_state.ip_address)
-                    await reset_session_variables(st.session_state.ip_address)
-                    
+                    st.session_state.thread = await call_async_function_safely(get_new_thread,st.session_state.client,st.session_state.session_id)
+                    await reset_session_variables()
                 
-
                 await stream(st.session_state.box,st.session_state.box_title,{'summary':summary_text,'details':detail_text,'style':style_text},st.session_state.client,st.session_state.thread,
                                                 st.session_state.assistant,{"node_id":st.session_state.current_node_id})
-
 
                 st.session_state.story_started = True
                 await update_session_variables()
@@ -248,6 +226,7 @@ async def main():
                 st.session_state.writing = False
                 st.session_state.chapter_number = 1
                 st.rerun()
+    # Editing story
     elif st.session_state.show_edit_input:
         edit_chapter_text = st.sidebar.text_area("Edit Instructions")
         col1, col2 = st.sidebar.columns([1, 1])
@@ -258,15 +237,14 @@ async def main():
                 st.rerun()
         with col2:
             if st.button("Submit",key="edit-submit"):
-                
                 await stream(st.session_state.box,st.session_state.box_title,{'rewrite_instructions':edit_chapter_text},st.session_state.client,st.session_state.thread,
                                                 st.session_state.assistant,{"node_id":st.session_state.current_node_id})
-
 
                 await update_session_variables()
                 st.session_state.show_edit_input = False
                 st.session_state.writing = False
                 st.rerun()
+    # Continuing story
     elif st.session_state.show_continue_input:
         next_chapter_text = st.sidebar.text_area("Next Chapter Instructions")
         col1, col2 = st.sidebar.columns([1, 1])
@@ -277,8 +255,6 @@ async def main():
                 st.rerun()
         with col2:
             if st.button("Submit",key="continue-submit"):
-                
-                
                 await stream(st.session_state.box,st.session_state.box_title,{'continue_instructions':next_chapter_text},st.session_state.client,st.session_state.thread,
                                                 st.session_state.assistant,{"node_id":st.session_state.current_node_id})
 
@@ -287,10 +263,11 @@ async def main():
                 st.session_state.writing = False
                 st.session_state.chapter_number += 1
                 st.rerun()
+    # Loading story
     elif st.session_state.show_load_story:
         col1, col2 = st.sidebar.columns([1, 1])
-        threads = await call_async_function_safely(get_user_threads,st.session_state.client,st.session_state.ip_address)
-        threads_without_current = [t for t in threads if t['thread_id'] != st.session_state.thread['thread_id']]
+        threads = await call_async_function_safely(get_user_threads,st.session_state.client,st.session_state.session_id)
+        threads_without_current = [t for t in threads if t['thread_id'] != st.session_state.thread['thread_id'] and 'Untitled' not in t['story_title']]
         options = [t['story_title'] for t in threads_without_current]
 
         if len(options) > 0:
@@ -304,15 +281,20 @@ async def main():
             st.session_state.thread = threads_without_current[options.index(selected_story)]
             await update_session_variables()
             st.session_state.show_load_story = False
+            st.session_state.chapter_number = 1
+            cur_chapter = st.session_state.currently_selected_chapter
+            while st.session_state.chapter_graph[cur_chapter]['parent'] != '-1':
+                st.session_state.chapter_number += 1
+                cur_chapter = st.session_state.chapter_graph[cur_chapter]['parent']
             st.rerun()
         with col1:
             if st.button("Back",key="load-story-back"):
                 st.session_state.show_load_story = False
                 st.rerun()
+    # Default Navigation pane
     else:
         st.sidebar.header("Navigation")
         if st.sidebar.button("New Story" if st.session_state.story_started else "Start Story"):
-            st.session_state.story_title = ""
             st.session_state.writing = True
             st.session_state.show_start_input = True
             st.rerun()
@@ -334,7 +316,7 @@ async def main():
     <style>
     div[data-testid="stHorizontalBlock"] > * {
         max-height: 300px;
-        overflow-y: auto;
+        overflow-y: scroll;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -342,6 +324,7 @@ async def main():
     col1, _, col3 = st.columns([1, 2, 1]) 
 
     if st.session_state.writing == False:
+        # Previous chapter options
         with col1:
             options = transform_titles_into_options([st.session_state.chapter_graph[chapter_id]['title'] for chapter_id in st.session_state.previous_chapter_options])
             if len(options) > 0:
@@ -362,6 +345,7 @@ async def main():
                 await call_async_function_safely(update_session_variables)
                 st.session_state.chapter_number -= 1
                 st.rerun()
+        # Next chapter options
         with col3:
             options = transform_titles_into_options([st.session_state.chapter_graph[chapter_id]['title'] for chapter_id in st.session_state.next_chapter_options])
             if len(options) > 0:
@@ -412,6 +396,7 @@ async def main():
 
     _, col2, _ = st.columns([1, 2, 1])
     if st.session_state.writing == False:
+        # Current chapter options
         with col2:
             options = transform_titles_into_options([st.session_state.chapter_graph[chapter_id]['title'] for chapter_id in st.session_state.current_chapter_options if chapter_id != "-1"])
             if len(options) > 0:
@@ -432,8 +417,10 @@ async def main():
                 await call_async_function_safely(update_session_variables)
                 st.rerun()
 
+        # Feedback options
         if st.session_state.current_node_id != '1':
             _, col2a,col2b, _ = st.columns([1, 1,1, 1])
+            # Bad writing
             with col2a:
                 with stylable_container(
                     key="red_button",
@@ -455,6 +442,7 @@ async def main():
                             score=0.0,
                             comment="comment",
                         )
+            # Good writing
             with col2b:
                 with stylable_container(
                     key="green_button",

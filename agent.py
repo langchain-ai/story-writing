@@ -7,6 +7,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from copy import deepcopy
 
 title_llm = ChatOpenAI(model="gpt-4o",metadata={"name":"title_llm"})
+chapter_title_llm = ChatOpenAI(model="gpt-4o",metadata={"name":"chapter_title_llm"})
 summary_llm = ChatOpenAI(model="gpt-4o",metadata={"name":"summary_llm"})
 brainstorm_llm = ChatOpenAI(model="gpt-4o",temperature=1,metadata={"name":"brainstorm_llm"})
 plan_llm = ChatAnthropic(model="claude-3-haiku-20240307",metadata={"name":"plan_llm"})
@@ -71,58 +72,23 @@ brainstorm_prompt = ChatPromptTemplate.from_messages(brainstorm_messages)
 outline_prompt = ChatPromptTemplate.from_messages(outline_messages)
 write_prompt = ChatPromptTemplate.from_messages(write_messages)
 
-# Turn these into nodes with llm as router to run tests on each of the chains
-# Add few shot prompting to improve the performance (get results from Langsmith)
 summary_chain = summary_prompt | summary_llm | StrOutputParser()
 brainstorm_chain = brainstorm_prompt | brainstorm_llm | StrOutputParser()
 outline_chain = outline_prompt | plan_llm | StrOutputParser()
 write_chain = write_prompt | write_llm | StrOutputParser()
 
-class Chapter(TypedDict):
-    content: str
-    title: str
-    children: list
-    siblings: list
-    cousins: list
-    parent: int
-    
-def update_chapter_graph(old_chapter_graph, new_chapter_graph):
-    if isinstance(new_chapter_graph,dict):
-        old_chapter_graph.update(new_chapter_graph)
-        return old_chapter_graph
-
-class State(TypedDict):
-    # User's initial inputs (could be updated later)
-    summary: str
-    details: str
-    style: str
-    summary_request: str = ""
-    detail_request: str = ""
-    style_request: str = ""
-    chapter_graph: Annotated[dict[str, Chapter], update_chapter_graph]
-    chapter_id_viewing: str
-    current_chapter_id: str
-    rewrite_instructions: str
-    continue_instructions: str
-    story_title: str = ""
-
-edit_prompt = """Here is the current state of the new chapter:
-
-<Draft>
-{draft}
-</Draft>
-
-Here are some edits I want to make to that chapter:
-
-<EditInstructions>
-{edit}
-</EditInstructions>"""
-
-continue_prompt = """Here is what I want in the next chapter:
-
-<Instructions>
-{instructions}
-</Instructions>"""
+def summarize_current_story(state,chapter_id):
+    if chapter_id == '-1':
+        return ""
+    current_chapter_id = chapter_id
+    chapters_currently_selected_text = [state['chapter_graph'][current_chapter_id]['content']]
+    while state['chapter_graph'][current_chapter_id]['parent'] != '-1':
+        chapters_currently_selected_text.append(state['chapter_graph'][current_chapter_id]['content'])
+        current_chapter_id = state['chapter_graph'][current_chapter_id]['parent']
+    chapters_str = "\n\n".join(
+        [f"Chapter {i}\n\n{chapters_currently_selected_text[i]}" for i in range(len(chapters_currently_selected_text))]
+    ).strip()
+    return summary_chain.invoke({"chapters_str": chapters_str})
 
 def write_chapter(user_message, chapters_summary, state):
     brainstorm_ideas = brainstorm_chain.invoke({'story_summary':chapters_summary,'action':user_message,'summary_request':state['summary_request'], \
@@ -133,7 +99,7 @@ def write_chapter(user_message, chapters_summary, state):
     response = write_chain.invoke({'story_summary':chapters_summary,'action':user_message,'summary_request':state['summary_request'], \
                                                 'detail_request':state['detail_request'],'style_request':state['style_request'],'outline':outline})
     chapter_content = response
-    chapter_title = summary_llm.invoke(f"Please come up with a title for the following chapter: {chapter_content}. The title should be 6 words or less.").content.replace("\"","")
+    chapter_title = chapter_title_llm.invoke(f"Please come up with a title for the following chapter: {chapter_content}. The title should be 6 words or less.").content.replace("\"","")
     return chapter_content, chapter_title
 
 def get_title(state,first_chapter):
@@ -157,18 +123,17 @@ def write_first_chapter(state):
     state['story_title'] = get_title(state,chapter_content)
     return state
 
-def summarize_current_story(state,chapter_id):
-    if chapter_id == '-1':
-        return ""
-    current_chapter_id = chapter_id
-    chapters_currently_selected_text = [state['chapter_graph'][current_chapter_id]['content']]
-    while state['chapter_graph'][current_chapter_id]['parent'] != '-1':
-        chapters_currently_selected_text.append(state['chapter_graph'][current_chapter_id]['content'])
-        current_chapter_id = state['chapter_graph'][current_chapter_id]['parent']
-    chapters_str = "\n\n".join(
-        [f"Chapter {i}\n\n{chapters_currently_selected_text[i]}" for i in range(len(chapters_currently_selected_text))]
-    ).strip()
-    return summary_chain.invoke({"chapters_str": chapters_str})
+edit_prompt = """Here is the current state of the new chapter:
+
+<Draft>
+{draft}
+</Draft>
+
+Here are some edits I want to make to that chapter:
+
+<EditInstructions>
+{edit}
+</EditInstructions>"""
 
 def edit_chapter(state):
     chapters_summary = summarize_current_story(state,state['chapter_graph'][state["chapter_id_viewing"]]['parent'])
@@ -182,11 +147,11 @@ def edit_chapter(state):
     
     #create new chapter
     state['chapter_graph'][str(int(state["current_chapter_id"])+1)] = Chapter(content=chapter_content,title=chapter_title,children=[], \
-                                                   siblings=deepcopy(state["chapter_graph"][state["chapter_id_viewing"]]['siblings']+[state["chapter_id_viewing"]]), \
-                                                   cousins=deepcopy(state["chapter_graph"][state["chapter_id_viewing"]]['children']), \
-                                                   parent=deepcopy(state["chapter_graph"][state["chapter_id_viewing"]]['parent']))
+                siblings=deepcopy(state["chapter_graph"][state["chapter_id_viewing"]]['siblings']+[state["chapter_id_viewing"]]), \
+                cousins=deepcopy(state["chapter_graph"][state["chapter_id_viewing"]]['cousins']), \
+                parent=deepcopy(state["chapter_graph"][state["chapter_id_viewing"]]['parent']))
     #update siblings
-    for sibling in state["chapter_graph"][state["chapter_id_viewing"]]['siblings']:
+    for sibling in state["chapter_graph"][str(int(state["chapter_id_viewing"]+1))]['siblings']:
         state["chapter_graph"][sibling]['siblings'].append(str(int(state["current_chapter_id"])+1))
 
     state["chapter_graph"][state["chapter_id_viewing"]]['siblings'].append(str(int(state["current_chapter_id"])+1))
@@ -194,6 +159,11 @@ def edit_chapter(state):
     state["chapter_id_viewing"] = deepcopy(state["current_chapter_id"])
     return state
 
+continue_prompt = """Here is what I want in the next chapter:
+
+<Instructions>
+{instructions}
+</Instructions>"""
 
 def continue_chapter(state):
     chapters_summary = summarize_current_story(state,state["chapter_id_viewing"])
@@ -216,6 +186,52 @@ def continue_chapter(state):
     state["chapter_id_viewing"] = deepcopy(state["current_chapter_id"])
     return state
 
+# State Definitions
+class Chapter(TypedDict):
+    content: str
+    """Content of the chapter"""
+    title: str
+    """Title of the chapter"""
+    children: list
+    """Direct descendants of the chapter - chapters you get by clicking Continue"""
+    siblings: list
+    """Direct edit descendants of the chapter - chapters you get by clicking Edit"""
+    cousins: list
+    """Chapters that originated from the same parent but are not directly related"""
+    parent: int
+    """For chapter number n, it is the node of chapter number n-1 that is directly related"""
+    
+def update_chapter_graph(old_chapter_graph, new_chapter_graph):
+    # Always add nodes to the overall graph
+    if isinstance(new_chapter_graph,dict):
+        old_chapter_graph.update(new_chapter_graph)
+        return old_chapter_graph
+
+class State(TypedDict):
+    summary: str
+    """Summary user passes in at beginning of story"""
+    details: str
+    """Details provided by user at beginning of story"""
+    style: str
+    """Desired writing style from the user"""
+    summary_request: str = ""
+    """Prompt engineered summary instructions for LLM"""
+    detail_request: str = ""
+    """Prompt engineered detial instructions for LLM"""
+    style_request: str = ""
+    """Prompt engineered writing style instructions for LLM"""
+    chapter_graph: Annotated[dict[str, Chapter], update_chapter_graph]
+    """Graph containing all of our chapter"""
+    chapter_id_viewing: str
+    """What node in the graph the user is currently viewing"""
+    current_chapter_id: str
+    """What is the current highest node (i.e. how many chapters have been written so far)"""
+    rewrite_instructions: str
+    """Instructions to edit a chapter from the user"""
+    continue_instructions: str
+    """Instructions to write the next chapter from the suer"""
+    story_title: str = ""
+    """Overall title of the story"""
 
 def router(state):
     if len(state.get('chapter_graph', [])) == 0:
@@ -224,7 +240,6 @@ def router(state):
         return "rewrite"
     else:
         return "continue"
-
 
 graph = StateGraph(State)
 graph.set_conditional_entry_point(router)

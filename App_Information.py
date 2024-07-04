@@ -12,23 +12,23 @@ async def main():
 
     st.title("App Information")
 
-    st.write("This app is a quick example showing how you can use LangGraph Cloud in your development applications. \
-            Before playing with the app, I highly recommend reading through this info guide to gain a better understanding of how it works.")
+    st.write("This app is a quick example showing how you can use LangGraph Cloud in your applications. \
+            Before using the app, I highly recommend reading through this info guide to gain a better understanding of how it works.")
     
     st.header("Background")
 
     st.write("This app was designed to show off some LangGraph Cloud features in a fun, interactive way. This app is designed to allow users to write a story \
              with the help of a LangGraph agent. The app allows users to edit chapters they have written already, or continue the story by writing \
-             the next chapter as well. This means the user could have multiple versions of the same chapter number (for example chapter #3) and can select the \
-             one they like most to continue writing chpater #4. At the beginning the user provides the graph information on the summary of the story, the writing style \
-             they want, and any additional details important to the story. From that point on they just need to provide edit and continue instructions to steer the \
+             the next chapter. This means the user can have multiple versions of the same chapter number and can select the \
+             one they like most to continue the story from. At the beginning the user provides the graph information on the summary of the story, the writing style \
+             they want, and any additional details important to the story. From that point they just need to provide edit and continue instructions to steer the \
              agent in the desired direction.  \n  \nNote: This app is a prototype and not ready for deployment. There might be bugs/poor results from the agent.")
     
     st.header("The Graph State")
 
     st.write("One of the coolest features of LangGraph Cloud is the ability to have a persistent state across many runs of the graph. \
-             In this case we are able to retain information about the story as the user continues to write it. In our case, we keep an overall \
-             chapter state graph, which is just a dictionary containing the different chapter written so far. Each time you edit or continue the \
+             In this case we are able to retain information about the story as the graph continues to write it. In our case, we keep an overall \
+             chapter state graph, which is just a dictionary containing the different chapters written so far. Each time you edit or continue the \
              story a new chapter is added to the graph. Each chapter keeps information about its content, title, and the relationship it has with \
              the other chapters in the story (i.e. what chapters are siblings, children, parents, or cousins to it). Below is an example of what the \
              chapter graph would look like after a user has been using the Story Writing tool for a little bit:")
@@ -41,7 +41,7 @@ async def main():
              then created Node 3 by editing the chapter that was contained in Node 1. You can follow the rest of the story creation on your own by tracking the \
              increasing node numbers.") 
              
-    st.write("When using the story app, you can navigate between previous chapters, next chapters, current chapters. It can be a little confusing to understand \
+    st.write("When using the story app, you can navigate between previous chapters, next chapters, current chapters. It can be a little hard to understand \
              what chapters show up where, so let's take a look at an example where the user is currently viewing the chapter in Node 5. The following diagram \
              highlights the relationships Node 5 has with other nodes, and the explanation below dives into how these relationships work and how they inform \
              what previous, next, and current chapter options we have to choose from:")
@@ -53,8 +53,8 @@ async def main():
              red arrows representing all of the other nodes the user could move to.  \n  \nThere is one \"Next Chapter\" option, Node 8, because Node 5 only has \
              one child. If we were to press \"Continue\" again from Node 5 to create another child, there would then be two options for the \"Next Chapter\".  \n  \nThere\
               are three current chapter options. The first is Node 5 itself (the chapter you are viewing is always an option to be the current chapter!) \
-             and then Nodes 6 and 7 are also options. Node 7 is a \"Sibling\" of Node 5 because it was created by editing from Node 5. If we were to further make \
-             an edit to Node 7, that new node would also be a siblig of Node 5. Any nodes that are direct \"edit descendants\" of a node are considered \"Siblings\" \
+             and then Nodes 6 and 7 are also options. Node 7 is a \"Sibling\" of Node 5 because it was created by editing from Node 5. If we were to make \
+             further edits to Node 7, that new node would also be a siblig of Node 5. Any nodes that are direct \"edit descendants\" of a node are considered \"Siblings\" \
              of that node.  \n  \nNode 6 is what we call a \"Cousin\" node because it originates from the same node as Node 5 (namely Node 4) but is not directly \
              connected to it on our flow chart. Any nodes that originate from the same parent as a particular node are considered \"Cousin\" nodes. To summarize: \
              the \"Current Chapter\" options consist of the current node itself, all of its \"Sibling\" nodes, and all of its \"Cousin\" nodes. \n\
