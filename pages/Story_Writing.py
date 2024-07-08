@@ -5,7 +5,7 @@ from langgraph_sdk import get_client
 import asyncio
 from langsmith import Client
 from streamlit_extras.stylable_container import stylable_container
-import requests
+from copy import deepcopy
 st.set_page_config(layout="wide")
 
 # Langsmith feedback client
@@ -23,7 +23,7 @@ async def get_run_id_corresponding_to_node(client, thread, node_id):
 
 # Create the agent
 async def start_agent(session_id):
-    client = get_client(url="https://ht-monthly-attachment-15-c1f10ef48e7c5c198bda57ca-g3ps4aazkq-uc.a.run.app")
+    client = get_client(url="https://ht-mundane-strait-97-7d4d2b12ec9c54a4aa34492a954c-g3ps4aazkq-uc.a.run.app")
     assistants = await client.assistants.search()
     assistants = [a for a in assistants if not a['config']]
     thread = await client.threads.create(metadata={"user":session_id})
@@ -61,7 +61,6 @@ llm_to_title = {
 # Streaming chapter writing
 async def generate_answer(placeholder, placeholder_title, input, client, thread, assistant, metadata = {}):
     current_llm = "starting"
-    chapter_written = False
     placeholder_title.markdown(f"<h4 style='text-align: center; color: rgb(206,234,253);'>  \
             {llm_to_title[current_llm]} \
             </h4>",unsafe_allow_html=True)
@@ -74,12 +73,12 @@ async def generate_answer(placeholder, placeholder_title, input, client, thread,
         if chunk.data and 'run_id' not in chunk.data:
             if isinstance(chunk.data,dict):
                 current_llm = chunk.data[list(chunk.data.keys())[0]]['metadata']['name']
-                placeholder_title.markdown(f"<h4 style='text-align: center; color: rgb(206,234,253);'>  \
-            {llm_to_title[current_llm]} \
-            </h4>",unsafe_allow_html=True)
+                #placeholder_title.markdown(f"<h4 style='text-align: center; color: rgb(206,234,253);'>  \
+            #{llm_to_title[current_llm]} \
+            #</h4>",unsafe_allow_html=True)
             elif current_llm == "write_llm" and chunk.data[0]['content']:
                 ans += chunk.data[0]['content'][current_ind:]
-                placeholder.info(ans)
+                #placeholder.info(ans)
                 current_ind += len(chunk.data[0]['content'][current_ind:])
 
 # Update variables after chapter has been written
@@ -198,45 +197,50 @@ async def main():
     if "show_load_story" not in st.session_state:
         st.session_state.show_load_story = False
 
+    if ('start_submit' in st.session_state and st.session_state.start_submit == True) or \
+       ('edit_submit' in st.session_state and st.session_state.edit_submit == True) or \
+       ('continue_submit' in st.session_state and st.session_state.continue_submit == True):
+        st.session_state.running = True
+    else:
+        st.session_state.running = False
+
     # Starting/New story
     if st.session_state.show_start_input:
-        summary_text = st.sidebar.text_area("Summary")
-        detail_text = st.sidebar.text_area("Details")
-        style_text = st.sidebar.text_area("Writing Style")
-        col1, col2 = st.sidebar.columns([1, 1])        
+        summary_text = st.sidebar.text_area("Summary", disabled=st.session_state.running)
+        detail_text = st.sidebar.text_area("Details", disabled=st.session_state.running)
+        style_text = st.sidebar.text_area("Writing Style", disabled=st.session_state.running)
+        col1, col2 = st.sidebar.columns([1, 1]) 
         with col1:
-            if st.button("Back",key="start-back"):
+            if st.button("Back",key="start-back", disabled=st.session_state.running):
                 st.session_state.show_start_input = False
                 st.session_state.writing = False
                 st.rerun()
         with col2:
-            if st.button("Submit",key="start-submit"):
-                st.session_state.writing = True
-                # If we start a new story, reset all of our session variables
+            if st.button("Submit",key="start_submit", disabled=st.session_state.running):
                 if st.session_state.story_started:
                     st.session_state.thread = await call_async_function_safely(get_new_thread,st.session_state.client,st.session_state.session_id)
                     await reset_session_variables()
-                
+                print(list(st.session_state.keys()))
                 await stream(st.session_state.box,st.session_state.box_title,{'summary':summary_text,'details':detail_text,'style':style_text},st.session_state.client,st.session_state.thread,
                                                 st.session_state.assistant,{"node_id":st.session_state.current_node_id})
-
                 st.session_state.story_started = True
                 await update_session_variables()
+
                 st.session_state.show_start_input = False
                 st.session_state.writing = False
                 st.session_state.chapter_number = 1
                 st.rerun()
     # Editing story
     elif st.session_state.show_edit_input:
-        edit_chapter_text = st.sidebar.text_area("Edit Instructions")
+        edit_chapter_text = st.sidebar.text_area("Edit Instructions", disabled=st.session_state.running)
         col1, col2 = st.sidebar.columns([1, 1])
         with col1:
-            if st.button("Back",key="edit-back"):
+            if st.button("Back",key="edit-back", disabled=st.session_state.running):
                 st.session_state.show_edit_input = False
                 st.session_state.writing = False
                 st.rerun()
         with col2:
-            if st.button("Submit",key="edit-submit"):
+            if st.button("Submit",key="edit_submit", disabled=st.session_state.running):
                 await stream(st.session_state.box,st.session_state.box_title,{'rewrite_instructions':edit_chapter_text},st.session_state.client,st.session_state.thread,
                                                 st.session_state.assistant,{"node_id":st.session_state.current_node_id})
 
@@ -246,15 +250,15 @@ async def main():
                 st.rerun()
     # Continuing story
     elif st.session_state.show_continue_input:
-        next_chapter_text = st.sidebar.text_area("Next Chapter Instructions")
+        next_chapter_text = st.sidebar.text_area("Next Chapter Instructions", disabled=st.session_state.running)
         col1, col2 = st.sidebar.columns([1, 1])
         with col1:
-            if st.button("Back",key="continue-back"):
+            if st.button("Back",key="continue-back", disabled=st.session_state.running):
                 st.session_state.show_continue_input = False
                 st.session_state.writing = False
                 st.rerun()
         with col2:
-            if st.button("Submit",key="continue-submit"):
+            if st.button("Submit",key="continue_submit", disabled=st.session_state.running):
                 await stream(st.session_state.box,st.session_state.box_title,{'continue_instructions':next_chapter_text},st.session_state.client,st.session_state.thread,
                                                 st.session_state.assistant,{"node_id":st.session_state.current_node_id})
 
@@ -370,6 +374,7 @@ async def main():
     _, col_middle_title, _ = st.columns([1, 6, 1])
     
     if "box_title" not in st.session_state or st.session_state.writing == False:
+        print("CREATING BOX TITLE")
         st.session_state.box_title = col_middle_title.empty()
     elif st.session_state.writing == True:
         with col_middle_title:
@@ -382,9 +387,10 @@ async def main():
                 </h2>",unsafe_allow_html=True)
     _, col_middle, col_scroll = st.columns([1, 6, 1])
     if "box" not in st.session_state:
+        print("CREATING BOX")
         st.session_state.box = col_middle.empty()
         st.rerun()
-    else:
+    elif (st.session_state.writing == False or st.session_state.story_started == False):
         st.session_state.box.info(st.session_state.chapter_graph[st.session_state.currently_selected_chapter]['content'])
 
     with col_scroll:

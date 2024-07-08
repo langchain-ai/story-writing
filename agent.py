@@ -116,7 +116,6 @@ def write_first_chapter(state):
         state['style_request'] = f"Please make sure to use the following writing style {state['style']}"
     chapter_content, chapter_title = write_chapter("Please write the first chapter of this story.", "no story up to this point, this is the first chapter!", state)
 
-    
     state['current_chapter_id'] = '1'
     state['chapter_id_viewing'] = '1'
     state['chapter_graph'] = {'1':Chapter(content=chapter_content,title=chapter_title,children=[],siblings=[],cousins=[],parent='-1')}
