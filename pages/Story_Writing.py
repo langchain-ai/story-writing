@@ -73,12 +73,12 @@ async def generate_answer(placeholder, placeholder_title, input, client, thread,
         if chunk.data and 'run_id' not in chunk.data:
             if isinstance(chunk.data,dict):
                 current_llm = chunk.data[list(chunk.data.keys())[0]]['metadata']['name']
-                #placeholder_title.markdown(f"<h4 style='text-align: center; color: rgb(206,234,253);'>  \
-            #{llm_to_title[current_llm]} \
-            #</h4>",unsafe_allow_html=True)
+                placeholder_title.markdown(f"<h4 style='text-align: center; color: rgb(206,234,253);'>  \
+            {llm_to_title[current_llm]} \
+            </h4>",unsafe_allow_html=True)
             elif current_llm == "write_llm" and chunk.data[0]['content']:
                 ans += chunk.data[0]['content'][current_ind:]
-                #placeholder.info(ans)
+                placeholder.info(ans)
                 current_ind += len(chunk.data[0]['content'][current_ind:])
 
 # Update variables after chapter has been written
@@ -220,7 +220,6 @@ async def main():
                 if st.session_state.story_started:
                     st.session_state.thread = await call_async_function_safely(get_new_thread,st.session_state.client,st.session_state.session_id)
                     await reset_session_variables()
-                print(list(st.session_state.keys()))
                 await stream(st.session_state.box,st.session_state.box_title,{'summary':summary_text,'details':detail_text,'style':style_text},st.session_state.client,st.session_state.thread,
                                                 st.session_state.assistant,{"node_id":st.session_state.current_node_id})
                 st.session_state.story_started = True
@@ -374,7 +373,6 @@ async def main():
     _, col_middle_title, _ = st.columns([1, 6, 1])
     
     if "box_title" not in st.session_state or st.session_state.writing == False:
-        print("CREATING BOX TITLE")
         st.session_state.box_title = col_middle_title.empty()
     elif st.session_state.writing == True:
         with col_middle_title:
@@ -387,7 +385,6 @@ async def main():
                 </h2>",unsafe_allow_html=True)
     _, col_middle, col_scroll = st.columns([1, 6, 1])
     if "box" not in st.session_state:
-        print("CREATING BOX")
         st.session_state.box = col_middle.empty()
         st.rerun()
     elif (st.session_state.writing == False or st.session_state.story_started == False):
