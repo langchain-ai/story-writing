@@ -28,6 +28,7 @@ async def start_agent(session_id):
     assistants = [a for a in assistants if not a['config']]
     thread = await client.threads.create(metadata={"user":session_id})
     assistant = assistants[0]
+    await asyncio.sleep(5.5)
     return [client,thread,assistant]
 
 # Find a story that we had previously written
@@ -72,10 +73,12 @@ async def generate_answer(placeholder, placeholder_title, input, client, thread,
     ):
         if chunk.data and 'run_id' not in chunk.data:
             if isinstance(chunk.data,dict):
-                current_llm = chunk.data[list(chunk.data.keys())[0]]['metadata']['name']
-                placeholder_title.markdown(f"<h4 style='text-align: center; color: rgb(206,234,253);'>  \
-            {llm_to_title[current_llm]} \
-            </h4>",unsafe_allow_html=True)
+                try:
+                    current_llm = chunk.data[list(chunk.data.keys())[0]]['metadata']['name']
+                    placeholder_title.markdown(f"<h4 style='text-align: center; color: rgb(206,234,253);'>  \
+                        {llm_to_title[current_llm]}</h4>",unsafe_allow_html=True)
+                except:
+                    pass
             elif current_llm == "write_llm" and chunk.data[0]['content']:
                 ans += chunk.data[0]['content'][current_ind:]
                 placeholder.info(ans)
@@ -219,7 +222,7 @@ async def main():
             if st.button("Submit",key="start_submit", disabled=st.session_state.running):
                 if st.session_state.story_started:
                     st.session_state.thread = await call_async_function_safely(get_new_thread,st.session_state.client,st.session_state.session_id)
-                    await reset_session_variables()
+                    await reset_session_variables()     
                 await stream(st.session_state.box,st.session_state.box_title,{'summary':summary_text,'details':detail_text,'style':style_text},st.session_state.client,st.session_state.thread,
                                                 st.session_state.assistant,{"node_id":st.session_state.current_node_id})
                 st.session_state.story_started = True
@@ -387,7 +390,7 @@ async def main():
     if "box" not in st.session_state:
         st.session_state.box = col_middle.empty()
         st.rerun()
-    elif (st.session_state.writing == False or st.session_state.story_started == False):
+    else:
         st.session_state.box.info(st.session_state.chapter_graph[st.session_state.currently_selected_chapter]['content'])
 
     with col_scroll:

@@ -1,10 +1,12 @@
 # App Information
 
-This app is a quick example showing how you can use LangGraph Cloud in your applications. Before using the app, I highly recommend reading through this info guide to gain a better understanding of how it works.
+## Using the website
 
-## Running app locally
+To use the website, all you need to do is use streamlit to run the app locally. First, clone the repository and then once you are in the repository directory call `streamlit run App_Information.py`. If you are hosting your own graph (see [this documentation](https://langchain-ai.github.io/langgraph/cloud/deployment/cloud/) for hosting on LangGraph Cloud), make sure to change the url in the `get_client` function call in `pages/Story_Writing.py` to match the url of your deployed graph.
 
-To run the app locally, clone the repository and then once you are in the repository directory call `streamlit run App_Information.py`. If you are hosting your own graph, make sure to change the url in the `get_client` function call in `pages/Story_Writing` to match the url of your deployed graph.
+Once you have called `streamlit run App_Information.py` you can go to `http://localhost:8501` to see the application. 
+
+If you don't wish to host yourself, you can access the website by going to the following URL: https://langchain-story-writing.streamlit.app.
 
 ## Background
 

@@ -150,7 +150,7 @@ def edit_chapter(state):
                 cousins=deepcopy(state["chapter_graph"][state["chapter_id_viewing"]]['cousins']), \
                 parent=deepcopy(state["chapter_graph"][state["chapter_id_viewing"]]['parent']))
     #update siblings
-    for sibling in state["chapter_graph"][str(int(state["chapter_id_viewing"]+1))]['siblings']:
+    for sibling in state["chapter_graph"][str(int(state["chapter_id_viewing"])+1)]['siblings']:
         state["chapter_graph"][sibling]['siblings'].append(str(int(state["current_chapter_id"])+1))
 
     state["chapter_graph"][state["chapter_id_viewing"]]['siblings'].append(str(int(state["current_chapter_id"])+1))
