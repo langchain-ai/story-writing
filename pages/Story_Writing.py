@@ -73,10 +73,12 @@ async def generate_answer(placeholder, placeholder_title, input, client, thread,
     ):
         if chunk.data and 'run_id' not in chunk.data:
             if isinstance(chunk.data,dict):
-                current_llm = chunk.data[list(chunk.data.keys())[0]]['metadata']['name']
-                placeholder_title.markdown(f"<h4 style='text-align: center; color: rgb(206,234,253);'>  \
-            {llm_to_title[current_llm]} \
-            </h4>",unsafe_allow_html=True)
+                try:
+                    current_llm = chunk.data[list(chunk.data.keys())[0]]['metadata']['name']
+                    placeholder_title.markdown(f"<h4 style='text-align: center; color: rgb(206,234,253);'>  \
+                        {llm_to_title[current_llm]}</h4>",unsafe_allow_html=True)
+                except:
+                    pass
             elif current_llm == "write_llm" and chunk.data[0]['content']:
                 ans += chunk.data[0]['content'][current_ind:]
                 placeholder.info(ans)
